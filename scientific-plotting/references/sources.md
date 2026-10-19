@@ -19,3 +19,9 @@ Color and point-line markers were the part opened for revision. Ordered series s
 These choices are not claimed as a certified color-vision palette. A red-green ramp cannot be made fully robust and still be amber-to-teal; shape and line style are the backup. Heatmaps stay on Matplotlib's `cividis` rather than a rainbow map. Do not invent error bars, bands, or significance marks to make a figure look finished.
 
 Journal sizes and file formats are recorded separately in [journals.md](journals.md), dated 2026-10-19. Those notes are review snapshots for JFM, Physics of Fluids/AIP, and the Elsevier artwork instructions used by JCP, CMAME, IJHMT and ATE. They are not official templates, and no journal artwork, palette, or style file was copied.
+
+## Quantitative algorithm-comparison extension
+
+The next iteration implements paper-level semantic identities, explicit reference orders and zooms, and numeric multi-panel composition rather than importing another project's theme. A user-provided Physics of Fluids article by Wen Ding et al., *Droplet wetting and flow dynamics on solid surfaces using the particle-based method with an enhanced gas–liquid–solid triple-line surface tension model* (2026), DOI `10.1063/5.0326505`, informed the task selection: compare methods and resolutions, pair quantitative accuracy with stability diagnostics, and disclose computational costs. No article image, table data or rendering asset is included. This is a different article from the initially mentioned MPB-LSMPS/CMAME title.
+
+The implementation is original. New examples use labelled synthetic observations and invented timings only, not digitized paper data or real solver benchmarks. Triple-y-axis plots, rainbow field maps, particle/3D rendering and screenshot composition were not adopted. The current palettes and JPEG/TIFF-only policy remain unchanged. See [algorithm comparisons](algorithm-comparisons.md) for the implemented contract.

@@ -11,10 +11,12 @@ import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.container import BarContainer
 from matplotlib import colors, font_manager
 from matplotlib.ticker import AutoMinorLocator, LogFormatterSciNotation, LogLocator, NullFormatter
+from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 import numpy as np
 import pandas as pd
 
@@ -459,7 +461,7 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
         collection.set_edgecolor("#2A2A2A")
         collection.set_alpha(0.85 if spacing < 12 else 1)
     for line in axes.lines:
-        if getattr(line, "_scientific_errorbar", False):
+        if getattr(line, "_scientific_errorbar", False) or getattr(line, "_scientific_guide", False):
             continue
         style = getattr(line, "_scientific_style", {})
         series_kind = style.get("kind", kind)
@@ -528,6 +530,11 @@ def _line_vertices(axes: mpl.axes.Axes) -> np.ndarray:
             offsets = collection.get_offsets()
             if len(offsets):
                 sampled.append(axes.transData.transform(offsets))
+    for child in axes.child_axes:
+        box = child.get_window_extent()
+        horizontal = np.linspace(box.x0, box.x1, 30)
+        vertical = np.linspace(box.y0, box.y1, 30)
+        sampled.append(np.array(np.meshgrid(horizontal, vertical)).reshape(2, -1).T)
     return np.concatenate(sampled) if sampled else np.empty((0, 2))
 
 
@@ -694,7 +701,7 @@ def _sync_legend(axes) -> None:
 def _check_text_layout(figure: mpl.figure.Figure) -> None:
     figure.canvas.draw()
     renderer = figure.canvas.get_renderer()
-    for panel_axes in figure.axes:
+    for panel_axes in [axes for parent in figure.axes for axes in (parent, *parent.child_axes)]:
         text_items = [panel_axes.title, panel_axes.xaxis.label, panel_axes.yaxis.label]
         legend = panel_axes.get_legend()
         if legend is not None:
@@ -720,11 +727,33 @@ def _check_text_layout(figure: mpl.figure.Figure) -> None:
             raise ValueError("Legend is clipped by this size preset.")
 
 
+def _registry_styles(style_registry: dict | None) -> dict:
+    if style_registry is None:
+        return {}
+    if not isinstance(style_registry, dict):
+        raise ValueError("style_registry must map string series labels to style objects.")
+    resolved = {}
+    for index, (label, style) in enumerate(style_registry.items()):
+        if not isinstance(label, str) or not isinstance(style, dict):
+            raise ValueError("style_registry needs string labels and style objects.")
+        if style.keys() - {"color", "marker", "linestyle"}:
+            raise ValueError("style_registry accepts color, marker and linestyle only; kinds stay per figure.")
+        resolved[label] = {
+            "color": CATEGORICAL_COLORS[index % len(CATEGORICAL_COLORS)],
+            "marker": MARKERS[index % len(MARKERS)],
+            "linestyle": LINESTYLES[index % len(LINESTYLES)],
+            **style,
+        }
+    return resolved
+
+
 def _series_options(values: list, kind: str, series_styles: dict | None,
-                    line_width: float | None, marker_size: float | None) -> dict:
+                    line_width: float | None, marker_size: float | None,
+                    style_registry: dict | None = None) -> dict:
     if series_styles is not None and not isinstance(series_styles, dict):
         raise ValueError("series_styles must map string series labels to style objects.")
     styles = series_styles or {}
+    registry = _registry_styles(style_registry)
     labels = {label for label, _ in values}
     if len(labels) != len(values):
         raise ValueError("Series labels are ambiguous after string conversion; use unique string labels.")
@@ -732,6 +761,9 @@ def _series_options(values: list, kind: str, series_styles: dict | None,
         raise ValueError(f"Unknown series_styles labels: {styles.keys() - labels}")
     if kind == "mixed" and styles.keys() != labels:
         raise ValueError("mixed requires an explicit kind for every series in series_styles.")
+    if style_registry is not None and labels - registry.keys():
+        warnings.warn("Unregistered series use automatic styles; add them to style_registry for cross-figure "
+                      f"consistency: {', '.join(sorted(labels - registry.keys()))}.", UserWarning, stacklevel=3)
     result = {}
     for label, _ in values:
         style = styles.get(label, {})
@@ -740,6 +772,12 @@ def _series_options(values: list, kind: str, series_styles: dict | None,
         series_kind = style.get("kind", kind)
         if series_kind not in SERIES_KINDS or (kind != "mixed" and series_kind != kind):
             raise ValueError("Per-series kind changes require kind='mixed'; native kinds keep their semantics.")
+        registered = dict(registry.get(label, {}))
+        if series_kind == "line":
+            registered.pop("marker", None)
+        if series_kind == "scatter":
+            registered.pop("linestyle", None)
+        style = {**registered, **style}
         if series_kind == "line" and "marker" in style:
             raise ValueError("line series cannot specify a marker; use point-line or mixed explicitly.")
         if series_kind != "scatter" and style.get("linestyle", "-") in (None, "", "None", "none", " "):
@@ -793,10 +831,161 @@ def _draw_series(axes, x_values, y_values, label, style, index, color):
     artist._scientific_identity = (
         series_kind,
         colors.to_hex(color),
-        None if series_kind == "scatter" else str(artist.get_linestyle()),
+        None if series_kind == "scatter" else str(linestyle),
         None if series_kind == "line" else str(marker),
     )
     return artist
+
+
+def _finite_number(value, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, np.number)) or not np.isfinite(value):
+        raise ValueError(f"{name} must be a finite number.")
+    return float(value)
+
+
+def _interval(value, name: str, *, positive: bool = False) -> list[float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(f"{name} requires two increasing finite numbers.")
+    lower, upper = [_finite_number(item, name) for item in value]
+    if lower >= upper or (positive and lower <= 0):
+        raise ValueError(f"{name} must increase and be strictly positive on a log axis.")
+    return [lower, upper]
+
+
+def _resolve_guides(reference_guides, kind: str, xscale: str, yscale: str) -> list[dict]:
+    if reference_guides is None:
+        return []
+    if kind not in (*SERIES_KINDS, "mixed") or not isinstance(reference_guides, list):
+        raise ValueError("reference_guides requires a list on line, point-line, scatter or mixed plots.")
+    result = []
+    for guide in reference_guides:
+        if not isinstance(guide, dict) or guide.keys() - {"kind", "axis", "value", "order", "anchor", "range", "label"}:
+            raise ValueError("Invalid reference guide keys.")
+        if not isinstance(guide.get("label"), str) or not guide["label"].strip() or guide["label"].startswith("_"):
+            raise ValueError("Each reference guide needs a visible label describing its meaning.")
+        resolved = dict(guide)
+        if guide.get("kind") == "constant":
+            if guide.keys() - {"kind", "axis", "value", "label"} or guide.get("axis") not in ("x", "y"):
+                raise ValueError("constant guides require axis='x' or 'y', value and label.")
+            resolved["value"] = _finite_number(guide.get("value"), "guide value")
+            scale = xscale if guide["axis"] == "x" else yscale
+            if scale == "log" and resolved["value"] <= 0:
+                raise ValueError("A log-axis reference guide must be strictly positive.")
+        elif guide.get("kind") == "power":
+            if guide.keys() - {"kind", "order", "anchor", "range", "label"} or (xscale, yscale) != ("log", "log"):
+                raise ValueError("power guides require log x and y axes, order, anchor, range and label.")
+            resolved["order"] = _finite_number(guide.get("order"), "guide order")
+            anchor = guide.get("anchor")
+            if not isinstance(anchor, (list, tuple)) or len(anchor) != 2:
+                raise ValueError("power guide anchor must be [x0, y0].")
+            resolved["anchor"] = [_finite_number(item, "guide anchor") for item in anchor]
+            if min(resolved["anchor"]) <= 0:
+                raise ValueError("power guide anchor must be strictly positive.")
+            resolved["range"] = _interval(guide.get("range"), "guide range", positive=True)
+        else:
+            raise ValueError("Reference guide kind must be constant or power.")
+        result.append(resolved)
+    return result
+
+
+def _draw_guides(axes, guides: list[dict]) -> None:
+    for guide in guides:
+        kwargs = {"label": guide["label"], "color": "#3A3F46", "linestyle": "--", "linewidth": 0.8}
+        if guide["kind"] == "constant":
+            draw = axes.axhline if guide["axis"] == "y" else axes.axvline
+            artist = draw(guide["value"], **kwargs)
+        else:
+            coordinates = np.geomspace(*guide["range"], 100)
+            anchor_x, anchor_y = guide["anchor"]
+            with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+                values = anchor_y * (coordinates / anchor_x) ** guide["order"]
+            if not np.isfinite(values).all() or np.any(values <= 0):
+                raise ValueError("power guide values must remain finite and strictly positive.")
+            artist, = axes.plot(coordinates, values, **kwargs)
+        artist._scientific_guide = True
+        artist._scientific_identity = ("guide", json.dumps(guide, sort_keys=True))
+
+
+def _resolve_inset(inset, kind: str, xscale: str, yscale: str) -> dict | None:
+    if inset is None:
+        return None
+    if kind not in (*SERIES_KINDS, "mixed") or not isinstance(inset, dict):
+        raise ValueError("inset requires a configuration on line, point-line, scatter or mixed plots.")
+    if inset.keys() != {"xlim", "ylim", "bounds"}:
+        raise ValueError("inset requires xlim, ylim and bounds=[left, bottom, width, height] in axes fractions.")
+    bounds = inset["bounds"]
+    if not isinstance(bounds, (list, tuple)) or len(bounds) != 4:
+        raise ValueError("inset bounds must contain four finite axes fractions.")
+    left, bottom, width, height = [_finite_number(item, "inset bounds") for item in bounds]
+    if min(left, bottom) < 0 or min(width, height) <= 0 or left + width > 1 or bottom + height > 1:
+        raise ValueError("inset bounds must fit inside the main axes.")
+    return {"xlim": _interval(inset["xlim"], "inset xlim", positive=xscale == "log"),
+            "ylim": _interval(inset["ylim"], "inset ylim", positive=yscale == "log"),
+            "bounds": [left, bottom, width, height]}
+
+
+def _refresh_inset(axes) -> None:
+    spec = getattr(axes, "_scientific_inset_spec", None)
+    if spec is None:
+        return
+    for connector in getattr(axes, "scientific_inset_connectors", ()):
+        connector.remove()
+    zoom = getattr(axes, "scientific_inset_axes", None)
+    if zoom is None:
+        zoom = axes.inset_axes(spec["bounds"], zorder=5)
+        axes.scientific_inset_axes = zoom
+    else:
+        zoom.clear()
+    zoom.set_xscale(axes.get_xscale())
+    zoom.set_yscale(axes.get_yscale())
+    _style_axes(zoom, "line")
+    for source in axes.lines:
+        if getattr(source, "_scientific_guide", False):
+            continue
+        target = Line2D([], [])
+        target.update_from(source)
+        target.set_data(source.get_xdata(), source.get_ydata())
+        target.set_transform(zoom.transData)
+        target.set_clip_path(zoom.patch)
+        target.set_label("_nolegend_")
+        zoom.add_line(target)
+    for source in axes.collections:
+        if isinstance(source, PathCollection):
+            offsets = np.asarray(source.get_offsets())
+            target = zoom.scatter(offsets[:, 0], offsets[:, 1])
+            target.set_paths(source.get_paths())
+            _copy_identity(source, target)
+        elif isinstance(source, LineCollection):
+            target = LineCollection(source.get_segments(), colors=source.get_colors(),
+                                    linewidths=source.get_linewidths(), linestyles=source.get_linestyles())
+            zoom.add_collection(target)
+        else:
+            continue
+        target.set_zorder(source.get_zorder())
+        target.set_label("_nolegend_")
+    zoom.set_xlim(spec["xlim"])
+    zoom.set_ylim(spec["ylim"])
+    _adapt_log_ticks(zoom)
+    _hide_edge_grids(zoom)
+    region = axes.transAxes.inverted().transform(axes.transData.transform([
+        [spec["xlim"][0], spec["ylim"][0]], [spec["xlim"][1], spec["ylim"][1]]]))
+    left, bottom, width, height = spec["bounds"]
+    delta = region.mean(axis=0) - np.array([left + width / 2, bottom + height / 2])
+    if abs(delta[1]) >= abs(delta[0]):
+        corners = (1, 2) if delta[1] >= 0 else (3, 4)
+    else:
+        corners = (1, 4) if delta[0] >= 0 else (2, 3)
+    axes.scientific_inset_connectors = mark_inset(axes, zoom, loc1=corners[0], loc2=corners[1],
+                                                 fc="none", ec="#777777", linewidth=0.7)
+
+
+def _heatmap_limits(heatmap_scale) -> dict:
+    if heatmap_scale is None:
+        return {}
+    if not isinstance(heatmap_scale, dict) or heatmap_scale.keys() != {"vmin", "vmax"}:
+        raise ValueError("heatmap_scale requires vmin and vmax.")
+    lower, upper = _interval([heatmap_scale["vmin"], heatmap_scale["vmax"]], "heatmap_scale")
+    return {"vmin": lower, "vmax": upper}
 
 
 def _comparison_errors(values: list, x: str, y: str, error: dict | None) -> tuple[list, dict]:
@@ -1314,6 +1503,10 @@ def render_plot(
     xscale: str = "linear",
     yscale: str = "linear",
     series_styles: dict | None = None,
+    style_registry: dict | None = None,
+    reference_guides: list[dict] | None = None,
+    inset: dict | None = None,
+    heatmap_scale: dict | None = None,
     error: dict | None = None,
     error_bars: dict | None = None,
     legend: str = "auto",
@@ -1323,6 +1516,7 @@ def render_plot(
     host_error_axes: mpl.axes.Axes | None = None,
     apply_layout: bool = True,
     draw_legend: bool = True,
+    draw_colorbar: bool = True,
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or group_kind not in ("auto", "ordered", "categorical"):
@@ -1336,6 +1530,11 @@ def render_plot(
         raise ValueError("Error panels require line, point-line, scatter or mixed.")
     if kind not in (*SERIES_KINDS, "mixed") and (xscale != "linear" or yscale != "linear" or series_styles is not None):
         raise ValueError("Axis scales and series_styles apply to line, point-line, scatter and mixed only.")
+    guides = _resolve_guides(reference_guides, kind, xscale, yscale)
+    inset_spec = _resolve_inset(inset, kind, xscale, yscale)
+    heatmap_limits = _heatmap_limits(heatmap_scale)
+    if heatmap_scale is not None and kind != "heatmap":
+        raise ValueError("heatmap_scale applies to heatmaps only.")
     chosen_formats = resolve_formats(formats)
     dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, kind == "heatmap")
     if line_width is not None and (kind not in ("point-line", "line", "mixed") or isinstance(line_width, bool)
@@ -1357,8 +1556,10 @@ def render_plot(
                 raise ValueError(f"Log axis column {column!r} contains non-positive values; no rows were removed.")
         ordered = _ordered_groups(frame, group, group_kind)
         values = _groups(frame, group, ordered)
-        styles = _series_options(values, kind, series_styles, line_width, marker_size)
+        styles = _series_options(values, kind, series_styles, line_width, marker_size, style_registry)
         comparisons, error_metadata = _comparison_errors(values, x, y, error)
+    elif style_registry is not None:
+        raise ValueError("style_registry applies to line, point-line, scatter and mixed only.")
     error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale, yscale=yscale)
     text_sizes = TEXT_SIZES_PT[size]
     with mpl.rc_context(_rc_for_font(face, text_sizes, embed=True)):
@@ -1385,6 +1586,9 @@ def render_plot(
             "formats": list(chosen_formats), "dpi_by_format": dpi_by_format,
             "heatmap": kind == "heatmap",
             "error": error_metadata if error is not None else None,
+            "reference_guides": guides,
+            "inset": inset_spec,
+            "heatmap_scale": heatmap_limits or None,
             "error_bars": None if error_bar_state is None else {
                 "definition": error_bar_state["definition"],
                 "capsize_pt": error_bar_state["capsize_pt"],
@@ -1490,12 +1694,13 @@ def render_plot(
             matrix = frame.apply(pd.to_numeric, errors="raise").to_numpy(dtype=float)
             if not np.isfinite(matrix).all():
                 raise ValueError("Heatmap requires a complete finite numeric matrix; handle empty cells first.")
-            image = axes.imshow(matrix, cmap="cividis", interpolation="nearest", aspect="auto")
+            image = axes.imshow(matrix, cmap="cividis", interpolation="nearest", aspect="auto", **heatmap_limits)
             axes.set_xticks(np.arange(frame.shape[1]), [str(item) for item in frame.columns])
             axes.set_yticks(np.arange(frame.shape[0]), [str(item) for item in frame.index])
             axes.tick_params(which="minor", bottom=False, left=False, top=False, right=False)
-            figure.colorbar(image, ax=axes, label=_prepare_label(value or "Value", families),
-                            fraction=0.05, pad=0.03)
+            if draw_colorbar:
+                figure.colorbar(image, ax=axes, label=_prepare_label(value or "Value", families),
+                                fraction=0.05, pad=0.03)
         else:
             _required(frame, y)
             _numeric(frame, y)
@@ -1519,6 +1724,8 @@ def render_plot(
         axes.set_ylabel(_prepare_label(ylabel if ylabel is not None else (y or value or ""), families))
         if title:
             axes.set_title(title)
+        _draw_guides(axes, guides)
+        axes._scientific_inset_spec = inset_spec
         if apply_layout:
             figure.tight_layout(pad=1.0)
             if kind in (*SERIES_KINDS, "mixed"):
@@ -1527,6 +1734,7 @@ def render_plot(
                                        bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
         figure.canvas.draw()
         _adapt_strokes(axes, kind, line_width, marker_size)
+        _refresh_inset(axes)
         if draw_legend:
             _place_legend(figure, axes, size, legend)
         figure.canvas.draw()
@@ -1537,6 +1745,7 @@ def render_plot(
         for label, artist in error_artists.items():
             _copy_identity(artists[label], artist)
         _sync_legend(axes)
+        _refresh_inset(axes)
         if error_bar_state is not None:
             metadata["error_bars"]["series"] = error_bar_records
         if artists:
@@ -1555,7 +1764,7 @@ def render_plot(
         if not hosted:
             figure.scientific_review = review_figure(figure, journal=journal)
             exported = _export_figure(figure, output, chosen_formats, dpi_by_format, metadata,
-                                      error is not None or error_bar_state is not None)
+                                      error is not None or error_bar_state is not None or bool(guides) or inset_spec is not None)
         return figure, axes, exported
 
 
@@ -1590,6 +1799,68 @@ def _sync_figure_legend(figure: mpl.figure.Figure) -> None:
             target.set_sizes(source.get_sizes()[:1])
 
 
+def _panel_layout(panels: list[dict], layout, ncols: int | None, width_mm: float) -> tuple[int, int, list]:
+    count = len(panels)
+    if layout is None:
+        if ncols is None:
+            ncols = 2 if width_mm >= 140 and 2 <= count <= 4 else 1
+        if isinstance(ncols, bool) or not isinstance(ncols, int) or not 1 <= ncols <= count:
+            raise ValueError("ncols must be an integer from 1 through the panel count.")
+        return int(np.ceil(count / ncols)), ncols, [
+            (index // ncols, index // ncols + 1, index % ncols, index % ncols + 1) for index in range(count)]
+    if ncols is not None:
+        raise ValueError("layout defines its own columns; omit ncols.")
+    if not isinstance(layout, (list, tuple)) or not layout:
+        raise ValueError("layout must be a nonempty rectangular matrix of panel IDs and None blanks.")
+    if any(not isinstance(row, (list, tuple)) or not row for row in layout):
+        raise ValueError("layout must contain nonempty rows.")
+    columns = len(layout[0])
+    if any(len(row) != columns for row in layout):
+        raise ValueError("layout rows must have equal lengths.")
+    identifiers = [panel.get("id") for panel in panels]
+    if any(not isinstance(identifier, str) or not identifier for identifier in identifiers):
+        raise ValueError("Every panel needs a nonempty string id when layout is provided.")
+    if len(set(identifiers)) != count:
+        raise ValueError("Panel IDs must be unique.")
+    cells = [cell for row in layout for cell in row if cell is not None]
+    if any(not isinstance(cell, str) for cell in cells) or set(cells) != set(identifiers):
+        raise ValueError("layout must include every panel ID and no unknown IDs; use None for blanks.")
+    spans = []
+    for identifier in identifiers:
+        positions = [(row, column) for row, entries in enumerate(layout)
+                     for column, cell in enumerate(entries) if cell == identifier]
+        row_start, column_start = np.min(positions, axis=0).tolist()
+        row_end, column_end = (np.max(positions, axis=0) + 1).tolist()
+        if any(layout[row][column] != identifier for row in range(row_start, row_end)
+               for column in range(column_start, column_end)):
+            raise ValueError(f"Panel {identifier!r} must occupy one rectangle in layout.")
+        spans.append((row_start, row_end, column_start, column_end))
+    return len(layout), columns, spans
+
+
+def _shared_heatmap_scale(panels: list[dict], shared_colorbar) -> dict | None:
+    if shared_colorbar is None:
+        return None
+    if not isinstance(shared_colorbar, dict) or shared_colorbar.keys() != {"vmin", "vmax", "label"}:
+        raise ValueError("shared_colorbar requires vmin, vmax and label.")
+    if not isinstance(shared_colorbar["label"], str) or not shared_colorbar["label"].strip():
+        raise ValueError("shared_colorbar needs a descriptive label including units.")
+    limits = _heatmap_limits({key: shared_colorbar[key] for key in ("vmin", "vmax")})
+    heatmaps = [panel for panel in panels if panel["kind"] == "heatmap"]
+    if len(heatmaps) < 2:
+        raise ValueError("shared_colorbar requires at least two numeric heatmaps.")
+    quantities = []
+    for panel in heatmaps:
+        if any(not isinstance(panel.get(key), str) or not panel[key].strip() for key in ("quantity", "unit")):
+            raise ValueError("Shared heatmaps must explicitly name quantity and unit; use '-' for dimensionless.")
+        quantities.append((panel["quantity"], panel["unit"]))
+        if panel.get("heatmap_scale") is not None and _heatmap_limits(panel["heatmap_scale"]) != limits:
+            raise ValueError("Panel heatmap_scale conflicts with the shared colorbar limits.")
+    if len(set(quantities)) != 1:
+        raise ValueError("Shared heatmaps must have the same explicit quantity and unit.")
+    return limits
+
+
 def render_multipanel(
     panels: list[dict],
     *,
@@ -1604,6 +1875,9 @@ def render_multipanel(
     formats: tuple[str, ...] | list[str] | None = None,
     dpi: int | None = None,
     font: str = "Arial",
+    style_registry: dict | None = None,
+    layout: list[list[str | None]] | None = None,
+    shared_colorbar: dict | None = None,
 ) -> tuple[mpl.figure.Figure, list, list[Path]]:
     """Compose real panels on one journal-width canvas. Titles stay in the caption."""
     if not panels:
@@ -1617,11 +1891,11 @@ def render_multipanel(
     size = resolve_size(size, journal)
     width_mm = SIZES_MM[size][0]
     count = len(panels)
-    if ncols is None:
-        ncols = 2 if width_mm >= 140 and 2 <= count <= 4 else 1
-    if isinstance(ncols, bool) or not isinstance(ncols, int) or not 1 <= ncols <= count:
-        raise ValueError("ncols must be an integer from 1 through the panel count.")
-    nrows = int(np.ceil(count / ncols))
+    for panel in panels:
+        if not isinstance(panel, dict) or "data" not in panel or "kind" not in panel:
+            raise ValueError("Each panel needs data and kind.")
+    nrows, ncols, spans = _panel_layout(panels, layout, ncols, width_mm)
+    shared_scale = _shared_heatmap_scale(panels, shared_colorbar)
     if height_mm is None:
         target_height = nrows * (width_mm / ncols) * 0.75 + PANEL_CHROME_MM
         resolved_height = min(max(target_height, HEIGHT_MIN_MM), HEIGHT_MAX_MM)
@@ -1641,7 +1915,8 @@ def render_multipanel(
     text_sizes = TEXT_SIZES_PT[size]
     letters = [f"({chr(ord('a') + index)})" for index in range(count)]
     draw_keys = ("kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
-                 "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend")
+                 "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
+                 "reference_guides", "inset", "heatmap_scale")
     with mpl.rc_context(_rc_for_font(face, text_sizes, embed=False)):
         figure = plt.figure(figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120)
         figure.scientific_error_axes = None
@@ -1652,35 +1927,46 @@ def render_multipanel(
             "heatmap": heatmap, "legend_mode": legend, "panel_letters": letters,
             "height_clamped": height_clamped, "target_height_mm": target_height,
             "xscale": None, "yscale": None, "error": None, "error_bars": None,
+            "layout": layout, "shared_colorbar": shared_colorbar,
         }
-        grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.38)
-        figure.subplots_adjust(left=0.16, right=0.97, bottom=0.16, top=0.90)
+        if shared_scale is None:
+            grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.38)
+        else:
+            outer = figure.add_gridspec(1, 2, width_ratios=[1, 0.035], wspace=0.12)
+            grid = outer[0].subgridspec(nrows, ncols, hspace=0.55, wspace=0.38)
+            colorbar_axes = figure.add_subplot(outer[1])
+        figure.subplots_adjust(left=0.16, right=0.88 if shared_scale is not None else 0.97, bottom=0.16, top=0.90)
         created = []
         share_x_anchor = None
         share_y_anchor = None
         for index, panel in enumerate(panels):
-            row, column = divmod(index, ncols)
+            row, row_end, column, column_end = spans[index]
+            cell = grid[row:row_end, column:column_end]
             share_kwargs = {}
             if sharex and share_x_anchor is not None:
                 share_kwargs["sharex"] = share_x_anchor
             if sharey and share_y_anchor is not None:
                 share_kwargs["sharey"] = share_y_anchor
             if panel.get("error") is not None:
-                sub = grid[row, column].subgridspec(2, 1, height_ratios=[2.4, 1], hspace=0.08)
+                sub = cell.subgridspec(2, 1, height_ratios=[2.4, 1], hspace=0.08)
                 axes = figure.add_subplot(sub[0], **share_kwargs)
                 error_axes = figure.add_subplot(sub[1], sharex=axes)
             else:
-                axes = figure.add_subplot(grid[row, column], **share_kwargs)
+                axes = figure.add_subplot(cell, **share_kwargs)
                 error_axes = None
             if share_x_anchor is None:
                 share_x_anchor = axes
             if share_y_anchor is None:
                 share_y_anchor = axes
             kwargs = {key: panel[key] for key in draw_keys if key in panel}
+            if shared_scale is not None and panel["kind"] == "heatmap":
+                kwargs["heatmap_scale"] = shared_scale
             render_plot(panel["data"], journal=journal, size=size, font=font, host_axes=axes,
                         host_error_axes=error_axes, apply_layout=False,
+                        style_registry=style_registry if panel["kind"] in (*SERIES_KINDS, "mixed") else None,
+                        draw_colorbar=shared_scale is None,
                         draw_legend=legend == "each", **kwargs)
-            if sharex and row != nrows - 1:
+            if sharex and row_end != nrows:
                 axes.tick_params(labelbottom=False)
                 if error_axes is not None:
                     error_axes.tick_params(labelbottom=False)
@@ -1691,6 +1977,11 @@ def render_multipanel(
                 axes.tick_params(labelleft=False)
                 axes.set_ylabel("")
             created.append((axes, error_axes, panel))
+        if shared_scale is not None:
+            image = next(axes.images[0] for axes, _, panel in created if panel["kind"] == "heatmap")
+            figure.colorbar(image, cax=colorbar_axes,
+                            label=_prepare_label(shared_colorbar["label"], _font_families(face)))
+        figure.scientific_metadata["panels"] = [axes._scientific_panel for axes, _, _ in created]
         for index, (axes, _error_axes, _panel) in enumerate(created):
             _place_panel_letter(axes, letters[index], text_sizes["title"])
         if legend == "shared":
@@ -1705,6 +1996,7 @@ def render_multipanel(
             _adapt_strokes(axes, panel["kind"], panel.get("line_width"), panel.get("marker_size"))
             if error_axes is not None:
                 _copy_matching_artists(axes, error_axes)
+            _refresh_inset(axes)
         for panel_axes in figure.axes:
             _adapt_log_ticks(panel_axes)
             _hide_edge_grids(panel_axes)
@@ -1728,6 +2020,17 @@ def _source_script(target: Path, args: list[str]) -> None:
         "subprocess.run([sys.executable, str(template), *args], check=True)\n",
         encoding="utf-8",
     )
+
+
+def _replace_cli_value(arguments: list[str], flag: str, value: str) -> None:
+    for index in range(len(arguments) - 1, -1, -1):
+        if arguments[index] == flag:
+            arguments[index + 1] = value
+            return
+        if arguments[index].startswith(flag + "="):
+            arguments[index] = flag + "=" + value
+            return
+    raise ValueError(f"Missing CLI argument {flag} in reproduction command.")
 
 
 def _cli_error_bars(options, parser) -> dict | None:
@@ -1777,6 +2080,9 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--xscale", choices=("linear", "log"), default="linear")
     parser.add_argument("--yscale", choices=("linear", "log"), default="linear")
     parser.add_argument("--series-config", type=Path, help="JSON mapping of string series labels to styles; mixed requires kind for each")
+    parser.add_argument("--style-registry", type=Path, help="Reusable JSON series identities: color, marker, linestyle")
+    parser.add_argument("--reference-config", type=Path, help="JSON list of explicit constant or power reference guides")
+    parser.add_argument("--inset-config", type=Path, help="JSON xlim, ylim and bounds for an explicit zoom inset")
     parser.add_argument("--legend", choices=("auto", "outside"), default="auto")
     parser.add_argument("--error-reference", help="Reference series label; adds a shared-x, linear-y error panel")
     parser.add_argument("--error-definition", choices=("signed", "absolute", "relative"))
@@ -1811,6 +2117,9 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     if error is None and options.error_interpolation != "none":
         parser.error("--error-interpolation requires --error-reference and --error-definition")
     series_styles = json.loads(options.series_config.read_text(encoding="utf-8")) if options.series_config else None
+    style_registry = json.loads(options.style_registry.read_text(encoding="utf-8")) if options.style_registry else None
+    reference_guides = json.loads(options.reference_config.read_text(encoding="utf-8")) if options.reference_config else None
+    inset = json.loads(options.inset_config.read_text(encoding="utf-8")) if options.inset_config else None
     source = options.input.resolve()
     if source.suffix.lower() == ".csv":
         frame = pd.read_csv(source, index_col=options.index_col)
@@ -1826,19 +2135,25 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         output=options.output, formats=options.formats, dpi=options.dpi,
         line_width=options.line_width, marker_size=options.marker_size,
         xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
+        style_registry=style_registry,
+        reference_guides=reference_guides, inset=inset,
         error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
         journal=options.journal, height_mm=options.height_mm,
     )
     plt.close(figure)
     if not options.no_script:
         original_args = list(argv if argv is not None else sys.argv[1:])
-        original_args[original_args.index("--input") + 1] = str(source)
-        original_args[original_args.index("--output") + 1] = str(options.output.resolve())
+        _replace_cli_value(original_args, "--input", str(source))
+        _replace_cli_value(original_args, "--output", str(options.output.resolve()))
         target = paths[0].with_suffix("")
-        if options.series_config:
-            config_path = target.with_name(target.stem + "_series.json")
-            config_path.write_text(json.dumps(series_styles, indent=2) + "\n", encoding="utf-8")
-            original_args[original_args.index("--series-config") + 1] = str(config_path.resolve())
+        for flag, payload, suffix in (("--series-config", series_styles, "series"),
+                                      ("--style-registry", style_registry, "registry"),
+                                      ("--reference-config", reference_guides, "references"),
+                                      ("--inset-config", inset, "inset")):
+            if getattr(options, flag[2:].replace("-", "_")) is not None:
+                config_path = target.with_name(target.stem + f"_{suffix}.json")
+                config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+                _replace_cli_value(original_args, flag, str(config_path.resolve()))
         _source_script(target, original_args)
     return paths
 

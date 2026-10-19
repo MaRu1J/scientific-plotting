@@ -2,6 +2,29 @@
 
 科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 JPEG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标、参考误差子图和可选误差棒。
 
+新增面向求解器与算法开发的定量分析能力：论文级系列身份配置、显式常值／阶数参考线、局部放大、跨行跨列组合图，以及数值热图共享色标。只处理定量数据；ParaView 粒子／三维渲染、截图拼版不在本轮范围。
+
+## 算法比较：新增接口
+
+- `render_plot(..., style_registry=...)`：按系列标签固定颜色、点型、线型；优先级为当前 `series_styles` ＞注册配置＞原自动分配。注册配置允许多余系列，未注册系列会提醒。纯线不出现点，散点不连线。
+- `reference_guides=[{"kind":"power","order":2,"anchor":[0.1,0.005],"range":[0.025,0.2],"label":"Explicit p=2"}]`：双对数图上的显式幂律参考，不拟合阶数。常值线用 `{"kind":"constant","axis":"y","value":1e-6,"label":"Tolerance"}`。
+- `inset={"xlim":[0.35,0.65],"ylim":[1.105,1.125],"bounds":[0.32,0.12,0.4,0.32]}`：显式放大范围和轴内相对位置；完整复制主图数据、最终样式及误差棒，不改变主图范围，不抽样，不重复图例。
+- `render_multipanel(..., layout=[["top","top"],["left","right"]])`：面板字典给出唯一 `id`，重复 ID 必须形成矩形，`None` 留白。面板编号按输入顺序；不要同时指定 `ncols`。
+- `heatmap_scale={"vmin":0,"vmax":5}`：数值热图显式线性色限，保留 `cividis`。组合图可传 `shared_colorbar={"vmin":0,"vmax":5,"label":"Pressure (Pa)"}`，所有热图须明确给出相同 `quantity`、`unit`；至少两幅热图才共享色标。
+
+CLI 增加 `--style-registry registry.json`、`--reference-config guides.json`、`--inset-config zoom.json`。与已有 `--series-config` 一样，这些 JSON 会保存当次副本供复现脚本使用；不自动打包原始数据。跨格组合图和共享色标本轮通过 Python API 使用。
+
+完整配置说明与可直接修改的代码见 [算法比较参考](scientific-plotting/references/algorithm-comparisons.md)。误差、耗时和内存应已计算好；本 skill 不自动推导范数、加速比或观测收敛阶。性能图须说明硬件、问题规模和计时范围，缺失时披露，不补造。
+
+运行带明确合成数据说明的六幅演示图：
+
+```bash
+MPLBACKEND=Agg .venv/bin/python examples/plot_algorithm_comparisons.py
+.venv/bin/python -m pytest -q tests/test_algorithm_comparisons.py
+```
+
+输出在 `figures/algorithm_comparisons/`，涵盖收敛参考阶、精度—成本、曲线放大、方法×分辨率、跨格组合图与共享色标。附带 `synthetic_caption_notes.txt` 说明全部数据是演示，不是论文复现或真实求解器性能测试。
+
 ## 仓库
 
 GitHub 仓库名是 `scientific-plotting`。可安装的 Skill 只有 `scientific-plotting/`。仓库根目录的说明、依赖和测试不是 Skill 本体；生成图和原始数据不发布。
