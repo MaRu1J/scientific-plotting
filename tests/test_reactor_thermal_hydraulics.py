@@ -14,6 +14,9 @@ SPEC = importlib.util.spec_from_file_location("reactor_figures", ROOT / "example
 RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
+BUNDLE_READY = (RUNNER.BUNDLE / "manifest.json").exists() and (RUNNER.BUNDLE / "raw/ID_20230809_Run_10.xml").exists()
+needs_bundle = pytest.mark.skipif(not BUNDLE_READY, reason="Local figure bundle is not part of the published skill.")
+
 
 def test_iapws_official_table_36():
     np.testing.assert_allclose(RUNNER.saturation_temperature([.1, 1, 10]),
@@ -36,6 +39,7 @@ def test_sampling_preserves_extrema_and_order():
     assert np.all(np.diff(selected) > 0)
 
 
+@needs_bundle
 def test_hwat_parser_keeps_source_sensor_order_and_duplicates():
     record = RUNNER.load_hwat(RUNNER.BUNDLE / "raw/ID_20230809_Run_10.xml")
     assert len(record["axial"]) == 23 and len(record["radial"]) == 12
@@ -45,6 +49,7 @@ def test_hwat_parser_keeps_source_sensor_order_and_duplicates():
     assert record["radial"].r_normalized.is_monotonic_decreasing
 
 
+@needs_bundle
 def test_bundle_uses_real_sources_and_required_plot_ratio():
     manifest = json.loads((RUNNER.BUNDLE / "manifest.json").read_text())
     assert len(manifest) == 14
@@ -55,10 +60,12 @@ def test_bundle_uses_real_sources_and_required_plot_ratio():
     assert all(record["sources"] for record in manifest)
 
 
+@needs_bundle
 def test_source_cache_hashes_and_publisher_checksums():
     assert RUNNER.prepare_sources(RUNNER.BUNDLE) == RUNNER.BUNDLE / "raw"
 
 
+@needs_bundle
 def test_pressure_reference_sampling_records_exact_source_rows():
     raw = pd.read_csv(RUNNER.BUNDLE / "raw/LOCA_10.csv")
     plotted = pd.read_csv(RUNNER.BUNDLE / "data/05_loca_reference_pointline.csv")
@@ -68,12 +75,14 @@ def test_pressure_reference_sampling_records_exact_source_rows():
     np.testing.assert_allclose(plotted.y, chosen.P * .1, rtol=1e-14)
 
 
+@needs_bundle
 def test_bar_is_full_timeseries_maximum():
     plotted = pd.read_csv(RUNNER.BUNDLE / "data/12_loca_peak_clad_bar.csv")
     expected = [pd.read_csv(RUNNER.BUNDLE / f"raw/LOCA_{severity}.csv").TPCT.max() for severity in (1, 10, 50)]
     np.testing.assert_array_equal(plotted.y, expected)
 
 
+@needs_bundle
 @pytest.mark.xfail(raises=AttributeError, reason="Original skill syncs BarContainer as if it were Line2D", strict=True)
 def test_original_skill_grouped_bar_legend_known_failure():
     template, _ = RUNNER.load_template(RUNNER.BUNDLE)

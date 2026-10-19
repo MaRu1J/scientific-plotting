@@ -1,8 +1,0 @@
-{
-  "kind": "heatmap",
-  "title": "轴向壁温实测矩阵 / Measured axial wall T",
-  "xlabel": "实验工况 / Experimental run (−)",
-  "ylabel": "测点号: 轴向高度 / Sensor: z (m)",
-  "size": "double",
-  "dpi": 300
-}

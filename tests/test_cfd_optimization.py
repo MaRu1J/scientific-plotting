@@ -307,6 +307,7 @@ def test_error_ylabel_and_dpi_do_not_change_sizes(tmp_path):
     assert [line.get_linewidth() for line in axes.lines] == [line.get_linewidth() for line in other_axes.lines]
 
 
+@pytest.mark.skipif(not (ROOT / "data/cfd_validation/raw/Poi395_4th_D.dat").exists(), reason="Local CFD cache is not part of the published skill.")
 def test_dns_optimization_inputs_preserve_both_original_grids():
     module_spec = importlib.util.spec_from_file_location("optimization_cases", ROOT / "examples/validate_cfd_optimization.py")
     module = importlib.util.module_from_spec(module_spec)
@@ -326,6 +327,7 @@ def test_dns_optimization_inputs_preserve_both_original_grids():
     assert all(entry["sha256"] == module.digest(ROOT / "data/cfd_validation/raw" / entry["file"]) for entry in provenance)
 
 
+@pytest.mark.skipif(not (ROOT / "figures/cfd_optimization").exists(), reason="Local figure bundle is not part of the published skill.")
 def test_delivered_bundle_replays_without_network_or_raw_dns():
     module_spec = importlib.util.spec_from_file_location("optimization_replay", ROOT / "examples/validate_cfd_optimization.py")
     module = importlib.util.module_from_spec(module_spec)

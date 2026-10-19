@@ -1,9 +1,0 @@
-.....................................                                    [100%]
-=============================== warnings summary ===============================
-tests/test_plot_template.py::test_validation_refuses_implicit_aggregation
-tests/test_plot_template.py::test_validation_refuses_implicit_aggregation
-  /home/ruijin/文档/ChatGPT/绘图skill/scientific-plotting/scripts/plot_template.py:292: UserWarning: Arial not installed; using Liberation Sans. Check the final text layout.
-    face = resolve_font(font)
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-37 passed, 2 warnings in 7.29s

@@ -4,7 +4,7 @@
 
 ## 仓库
 
-GitHub 仓库名是 `scientific-plotting`。可安装的 Skill 在 `scientific-plotting/`，仓库根目录的说明、示例、测试和图集不是 Skill 本体。
+GitHub 仓库名是 `scientific-plotting`。可安装的 Skill 只有 `scientific-plotting/`。仓库根目录的说明、依赖和测试不是 Skill 本体；生成图和原始数据不发布。
 
 公开仓库建好后，用 Codex 的安装脚本安装（把 `<OWNER>` 换成 GitHub 用户名）：
 
@@ -59,76 +59,56 @@ plt.close(figure)
 
 此例的点按 `0.02 → 0.00 → 0.01` 连线，不做排序。Python API 接受 pandas DataFrame、等长列数组字典；二维 NumPy 数组也可直接作为热力图矩阵。未指定 `output` 时只返回画布而不写文件；CLI 才额外生成复现脚本。
 
-## CFD 系统测试
+## 仓库里有什么
 
-`examples/test_cfd_plotting.py` 使用 Kawamura Lab 的真实通道流 DNS 文本数据，以及明确标注的解析/理论参考与合成示意数据，优先验证 5 个 `line` 和 5 个 `point-line` 场景，再生成 2 个纯线+散点混合补充图，最后简单验证另外四种图形。DNS 文件缓存于 `data/cfd_validation/raw/`，保留原作者的署名和引用要求；不同物理量的交错网格分别保留，不按相同序号误合并。合成曲线不能用于声明 CFD 模型或求解器获得物理验证。
+安装和发布只包含 Skill 本体 `scientific-plotting/`：说明、绘图母板和风格约定。`figures/` 与 `data/` 是本机验证时生成的图和缓存的原始数据，不属于 Skill，也不再放进 GitHub 仓库。克隆后不会自带这些目录。
 
-```bash
-.venv/bin/python examples/test_cfd_plotting.py
-.venv/bin/python -m pytest -q
-.venv/bin/python figures/cfd_validation/reproduce.py
-```
-
-输出目录 `figures/cfd_validation/` 是保留的上一轮基线，包含 16 张 PNG、逐图输入 CSV、数据源/校验和/审计记录 `manifest.json`、中文报告、画廊和离线复现快照。旧快照保留当时通过 Axes 实现的对数轴及混合图方式；当前母板已原生支持这些功能，不需手工叠图。
-
-## CFD 原生增强
-
-原有调用默认不变：`line` 所有组纯线，`point-line` 所有组点+线，`scatter` 纯散点；混合图必须显式 `--kind mixed`。`--xscale` / `--yscale` 支持 `linear`（默认）和 `log`，对数轴输入出现零或负数会报错，不删除数据。仅线、点线、散点和混合图接受非线性坐标。
-
-先生成本轮独立图集（仅读取已缓存 DNS，不联网、不覆盖旧图）：
+`examples/` 和 `tests/` 用来在本机检查母板。其中依赖 DNS、反应堆数据或已生成图集的检查，在缺少本地缓存时会跳过。母板本身的测试不需要这些数据：
 
 ```bash
-.venv/bin/python examples/validate_cfd_optimization.py
-.venv/bin/python figures/cfd_optimization/reproduce.py
-.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q tests/test_plot_template.py tests/test_cfd_validation.py
 ```
 
-`figures/cfd_optimization/` 包含 13 张原生验证图、3 张总览及黑白复核图、输入 CSV、逐图参数与系列 JSON、原始 DNS 校验和、`manifest.json`、`audit.json`、误差定义/插值记录、母板和运行脚本快照。复制整个目录后可离线运行 `reproduce.py`，无需原仓库或原始 DNS 路径；需要当前项目已有的 Python 科学计算依赖及 Pillow。`REPORT.md` 和 `VALIDATION.md` 记录图像检查与验证结果。
+## 对数轴、混合系列和误差子图
 
-### CLI 示例
+`line` 是纯线，`point-line` 是按原始顺序连点，`scatter` 是纯散点。混合图必须显式 `--kind mixed`，并为每个系列给出 `kind`。`--xscale` / `--yscale` 支持 `linear`（默认）和 `log`；对数轴出现零或负数会报错，不删除数据。只有线、点线、散点和混合图接受非线性坐标。
 
-残差收敛（保留迭代 0，只有残差轴取对数）：
+残差轴取对数：
 
 ```bash
 .venv/bin/python scientific-plotting/scripts/plot_template.py \
-  --input figures/cfd_optimization/data/01_residual_single.csv \
-  --kind line --x x --y y --group series --yscale log \
+  --input /path/to/residuals.csv \
+  --kind line --x iteration --y residual --group solver --yscale log \
   --xlabel 'Iteration (-)' --ylabel 'Normalized residual (-)' \
-  --output figures/cfd_optimization/cli_residual
+  --output /path/to/figures/residual
 ```
 
-混合泊肃叶流对比及误差子图（使用图集内实际交付的系列配置）：
-
-```bash
-.venv/bin/python scientific-plotting/scripts/plot_template.py \
-  --input figures/cfd_optimization/data/05_pipe_error_double.csv \
-  --kind mixed --x x --y y --group series --group-kind categorical --size double \
-  --series-config figures/cfd_optimization/data/05_pipe_error_double_styles.json \
-  --error-reference Theory --error-definition signed --error-interpolation linear \
-  --xlabel 'Radius, r/R' --ylabel 'Velocity, u/Ub' --error-ylabel 'Signed error in u/Ub' \
-  --output figures/cfd_optimization/cli_pipe
-```
-
-系列配置形如（键必须与 CSV 分组标签一致）：
+混合对比和误差子图要把系列配置写成 JSON，键与 CSV 的分组标签一致：
 
 ```json
 {
   "Theory": {"kind": "line", "linestyle": "-", "color": "#126b80", "line_width": 1.8},
-  "CFD (synth.)": {"kind": "point-line", "linestyle": "--", "marker": "s", "marker_size": 4},
-  "Samples (synth.)": {"kind": "scatter", "marker": "^", "marker_size": 5.5}
+  "CFD": {"kind": "point-line", "linestyle": "--", "marker": "s", "marker_size": 4},
+  "Samples": {"kind": "scatter", "marker": "^", "marker_size": 5.5}
 }
 ```
 
-配置可按系列指定线型、点形、颜色、线宽与点径；纯线不接受点形，纯散点不接受连接线型。原生 `line`/`point-line` 也接受配置外观，但不允许在配置中偷偷改变系列类型。全局尺寸覆盖自动值，系列尺寸再覆盖全局值。`--legend outside` 显式外置：优先右侧，长标签尝试上方，不缩字号、不加大画布；仍放不下则明确报错。
+```bash
+.venv/bin/python scientific-plotting/scripts/plot_template.py \
+  --input /path/to/profiles.csv \
+  --kind mixed --x radius --y velocity --group series --group-kind categorical --size double \
+  --series-config /path/to/styles.json \
+  --error-reference Theory --error-definition signed --error-interpolation linear \
+  --xlabel 'Radius, r/R' --ylabel 'Velocity, u/Ub' --error-ylabel 'Signed error in u/Ub' \
+  --output /path/to/figures/profile
+```
 
-CLI 默认仍只导出 PNG 图像，原有母板副本和启动器保留，额外固定一份系列 JSON 防止源配置丢失。启用误差子图后增加 `*_metadata.json` 记录公式、参考和逐组比较方法。通用 CLI 启动器仍记录绝对输入路径，数据移动需改路径；上述完整图集的复现包则可整体搬移。
-
-### Python 误差对比
+纯线不接受点形，纯散点不接受连接线型。原生 `line` / `point-line` 可以改外观，但不能在配置里改系列类型。`--legend outside` 会把图例放到图外：优先右侧，长标签再试上方；不缩小字号，也不加大画布，放不下就报错。
 
 ```python
 figure, axes, paths = render_plot(
     observations, kind="mixed", x="x", y="y", group="series", size="double",
-    xscale="linear", yscale="linear", series_styles=styles,
+    series_styles=styles,
     error={"reference": "Theory", "definition": "signed", "interpolation": "linear",
            "ylabel": "Signed error in u/Ub"},
     output="figures/comparison",
@@ -137,23 +117,7 @@ error_axes = figure.scientific_error_axes
 audit = figure.scientific_metadata
 ```
 
-这里 `observations`/`styles` 是调用方自己的长表和配置；可用图集 CSV 与对应 `*_styles.json` 实例化。有符号误差 `y-ref`，绝对误差 `abs(y-ref)`，相对误差 `(y-ref)/abs(ref)`（比例而非百分比）。默认**严格匹配坐标和顺序**，不是按等长行号相减；只有显式指定 `linear` 才在线性数据坐标中插值参考，参考必须严格递增且唯一，禁止外推。相对误差参考为零仅支持明确报错（`zero_reference='raise'`），不加 epsilon、不掩码、不删零点；可选择绝对误差。下图纵轴始终线性、横轴与主图共享，视觉身份跟随主图，不添加拟合、平滑、误差棒或置信区间。
-
-自动线宽/点径现在按**每个系列最终坐标框中的相邻点间距**独立判断，包含对数变换和图例外置后的坐标框变化。修复旧逻辑把多系列间距的中位数再次混合的问题；不会因为密集 DNS 或重合的另一组缩小稀疏组。点线图标记现为实心，足够大时加白边，不再使用稀疏空心环；未抽稀、未跳过标记。散点的密度判断同样局限在自身系列。因修复尺寸/布局，旧输入的 PNG 不保证与旧母板字节一致；旧快照的离线复现不受影响。
-
-限制：仍可能存在真实密点重叠；误差面板会减少主图可用高度，单栏长图例尤需检查实际印刷尺寸；不提供局部放大、自动平滑/拟合、外推或零参考替换策略。Kawamura 的 mean/uu/ww 和 vv/-uv 始终保留各自交错网格。合成 CFD、测量及残差仅用于绘图检验，不能据此宣称求解器或实验精度得到验证。
-
-## 热工水力真实数据测试
-
-`figures/reactor_thermal_hydraulics/index.html` 提供 14 张真实公开数据图：4 张 `line`、6 张 `point-line`（合计 71.43%），其余 `scatter`、`bar`、`heatmap`、`violin` 各一张。使用 NPPAD 的 PCTRAN 事故模拟、KTH/HWAT 实验数据（DOI: 10.5281/zenodo.14627088）及官方 IAPWS 饱和温度参照；不伪造同工况计算–实验验证对。中文标题和坐标通过字体回退支持，原 skill 保持不变。
-
-```bash
-.venv/bin/python examples/plot_reactor_thermal_hydraulics.py
-.venv/bin/python figures/reactor_thermal_hydraulics/reproduce.py --output-dir /tmp/reactor-replay
-.venv/bin/python -m pytest -q tests/test_reactor_thermal_hydraulics.py
-```
-
-默认离线读取已缓存原始文件，并核对 SHA-256 和发布者 XML MD5。完整说明见图集 `REPORT.md`、`VALIDATION.md` 和 `sources.lock.json`。特别记录径向坐标单位歧义、同高度多热电偶、仅时序点线图抽样，以及原模板 grouped-bar 图例同步的已知失败；此图集用原生非分组 bar 和显式外置图例，不掩盖失败。
+有符号误差是 `y - ref`，绝对误差是 `abs(y - ref)`，相对误差是 `(y - ref) / abs(ref)`。默认按坐标和顺序严格匹配，不按行号硬减，也不排序、外推或平滑。相对误差遇到零参考会报错。误差子图的纵轴保持线性，横轴与主图相同。误差线、阴影和统计标注必须来自已有数据和明确含义，不能为了好看临时添加。
 
 ## 风格和贡献
 
@@ -167,4 +131,4 @@ audit = figure.scientific_metadata
 
 ## 许可
 
-绘图代码和 Skill 以 MIT 许可发布，版权人为 RuiJin Ma，2026，见仓库根目录 `LICENSE`。图集里的第三方数据仍使用各自的原始许可和署名，记录在对应 `REPORT.md` 与 `sources.lock.json`。IAPWS IF97 修订版 PDF 不放入仓库；需要离线复现热工水力图集时，用官方地址补齐 `figures/reactor_thermal_hydraulics/raw/IF97-Rev.pdf`，或运行该示例的 `--download`。
+绘图代码和 Skill 以 MIT 许可发布，版权人为 RuiJin Ma，2026，见仓库根目录 `LICENSE`。本机验证用过的第三方数据不在仓库中，仍须遵守其原始许可和署名。

@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 *.pyc
 figures/reactor_thermal_hydraulics/raw/IF97-Rev.pdf
+data/
+figures/
