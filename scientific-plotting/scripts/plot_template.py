@@ -55,7 +55,24 @@ JOURNALS = {
 }
 KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed")
 SERIES_KINDS = ("line", "point-line", "scatter")
-FONTS = {"Arial": "Liberation Sans", "Times New Roman": "Liberation Serif"}
+_FONT_CANDIDATES = {
+    "Arial": (("Arial",), ("Liberation Sans",)),
+    "Times New Roman": (("Times New Roman",), ("Liberation Serif",)),
+    "思源黑体": (("Noto Sans CJK SC", "Source Han Sans SC", "思源黑体"), ("WenQuanYi Micro Hei",)),
+    "思源宋体": (("Noto Serif CJK SC", "Source Han Serif SC", "思源宋体"), ("AR PL UMing CN",)),
+}
+_FONT_ALIASES = {
+    "Noto Sans CJK SC": "思源黑体",
+    "Source Han Sans SC": "思源黑体",
+    "Noto Serif CJK SC": "思源宋体",
+    "Source Han Serif SC": "思源宋体",
+}
+FONT_CHOICES = (
+    "Arial", "Times New Roman", "思源黑体", "思源宋体",
+    "Noto Sans CJK SC", "Source Han Sans SC", "Noto Serif CJK SC", "Source Han Serif SC",
+)
+_CJK_FACES = frozenset(name for preferred, fallbacks in (
+    _FONT_CANDIDATES["思源黑体"], _FONT_CANDIDATES["思源宋体"]) for name in (*preferred, *fallbacks))
 # Categorical hues stay apart and dark enough for a thin line on white.
 # Ordered stops run amber -> yellow-green -> green -> teal -> deep blue-teal.
 CATEGORICAL_COLORS = ("#2F6DB5", "#D35400", "#1B8A4C", "#AA3377", "#6A7020", "#C4453A", "#5C4E9A", "#3A3F46")
@@ -73,17 +90,198 @@ _ERRORBAR_KEYS = frozenset({"x", "y", "x_lower", "x_upper", "y_lower", "y_upper"
 
 
 def resolve_font(requested: str) -> str:
-    """Pick a specified face or an explicitly reported metric-compatible fallback."""
-    if requested not in FONTS:
-        raise ValueError(f"Font must be one of: {', '.join(FONTS)}")
+    """Pick a specified face, or an explicitly reported fallback when it is missing."""
+    canonical = _FONT_ALIASES.get(requested, requested)
+    if canonical not in _FONT_CANDIDATES:
+        raise ValueError(f"Font must be one of: {', '.join(FONT_CHOICES)}")
+    preferred, fallbacks = _FONT_CANDIDATES[canonical]
     available = {entry.name for entry in font_manager.fontManager.ttflist}
-    if requested in available:
-        return requested
-    fallback = FONTS[requested]
-    if fallback not in available:
-        raise RuntimeError(f"Neither {requested} nor {fallback} is installed; install one before plotting.")
-    warnings.warn(f"{requested} not installed; using {fallback}. Check the final text layout.", stacklevel=2)
-    return fallback
+    for name in preferred:
+        if name in available:
+            return name
+    for name in fallbacks:
+        if name in available:
+            warnings.warn(f"{canonical} not installed; using {name}. Check the final text layout.", stacklevel=2)
+            return name
+    tried = ", ".join((*preferred, *fallbacks))
+    raise RuntimeError(f"Neither {canonical} nor a fallback is installed (tried {tried}).")
+
+
+def _font_families(face: str | list | tuple) -> tuple[str, ...]:
+    if isinstance(face, (list, tuple)):
+        return tuple(str(item) for item in face)
+    return (str(face),)
+
+
+def _face_has_glyph(family: str, character: str) -> bool:
+    try:
+        path = font_manager.findfont(font_manager.FontProperties(family=family), fallback_to_default=False)
+    except ValueError:
+        return False
+    return font_manager.get_font(path).get_char_index(ord(character)) != 0
+
+
+def _ensure_cjk_font(text: str, families: tuple[str, ...]) -> None:
+    character = next((char for char in text if "\u4e00" <= char <= "\u9fff"), None)
+    if character is None or any(_face_has_glyph(family, character) for family in families):
+        return
+    raise ValueError(
+        f"Chinese text cannot be drawn with {', '.join(families)}. Choose font '思源黑体' or '思源宋体'.")
+
+
+def _closed_math(part: str) -> bool:
+    if not part.endswith("$") or part.endswith("\\$"):
+        return False
+    count = 0
+    escaped = False
+    for char in part:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "$":
+            count += 1
+    return count > 0 and count % 2 == 0
+
+
+def _add_plain(parts: list[str], text: str) -> None:
+    if parts and not _closed_math(parts[-1]):
+        parts[-1] += text
+    else:
+        parts.append(text)
+
+
+def _is_script_base(char: str) -> bool:
+    if char.isascii() and char.isalnum():
+        return True
+    code = ord(char)
+    return 0x0370 <= code <= 0x03FF or 0x1F00 <= code <= 0x1FFF
+
+
+def _read_script(source: str, start: int) -> tuple[str, int] | None:
+    if start >= len(source):
+        return None
+    char = source[start]
+    if char == "{":
+        depth = 0
+        for cursor, item in enumerate(source[start:], start):
+            if item == "{":
+                depth += 1
+            elif item == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[start:cursor + 1], cursor + 1
+        return None
+    if char == "\\":
+        cursor = start + 1
+        while cursor < len(source) and source[cursor].isascii() and source[cursor].isalpha():
+            cursor += 1
+        if cursor == start + 1:
+            return None
+        return source[start:cursor], cursor
+    if char in "*+":
+        return char, start + 1
+    if char == "-" and start + 1 < len(source) and source[start + 1].isdigit():
+        cursor = start + 1
+        while cursor < len(source) and source[cursor].isdigit():
+            cursor += 1
+        return source[start:cursor], cursor
+    if char.isdigit():
+        cursor = start
+        while cursor < len(source) and source[cursor].isdigit():
+            cursor += 1
+        return source[start:cursor], cursor
+    if _is_script_base(char):
+        return char, start + 1
+    return None
+
+
+def _attach_script(parts: list[str], operator: str, script: str) -> None:
+    token = operator + (script if script.startswith("{") else "{" + script + "}")
+    if parts and _closed_math(parts[-1]):
+        parts[-1] = parts[-1][:-1] + token + "$"
+        return
+    head = parts[-1] if parts else ""
+    base_at = len(head)
+    while base_at > 0 and _is_script_base(head[base_at - 1]):
+        base_at -= 1
+    base = head[base_at:]
+    if parts:
+        parts[-1] = head[:base_at]
+        if not parts[-1]:
+            parts.pop()
+    parts.append(f"${base}{token}$")
+
+
+def format_axis_label(text: str | None) -> str:
+    """Convert t^*, t^+, subscripts, and \\(...\\) into Matplotlib mathtext."""
+    source = "" if text is None else str(text)
+    parts: list[str] = []
+    index = 0
+    length = len(source)
+    while index < length:
+        if source.startswith(r"\(", index) or source.startswith(r"\[", index):
+            closer = r"\)" if source.startswith(r"\(", index) else r"\]"
+            end = source.find(closer, index + 2)
+            if end != -1:
+                inner = source[index + 2:end].strip()
+                if inner:
+                    parts.append(f"${inner}$")
+                index = end + 2
+                continue
+        if source[index] == "$":
+            delimiter = "$$" if source.startswith("$$", index) else "$"
+            cursor = index + len(delimiter)
+            closed = False
+            while cursor < length:
+                if source[cursor] == "\\" and cursor + 1 < length:
+                    cursor += 2
+                    continue
+                if source.startswith(delimiter, cursor):
+                    cursor += len(delimiter)
+                    closed = True
+                    break
+                cursor += 1
+            if not closed:
+                parts.append(source[index:])
+                break
+            parts.append(source[index:cursor])
+            index = cursor
+            continue
+        if source[index] == "\\" and index + 1 < length and source[index + 1] in "^_":
+            _add_plain(parts, source[index + 1])
+            index += 2
+            continue
+        if source[index] in "^_":
+            found = _read_script(source, index + 1)
+            if found is not None:
+                operator = source[index]
+                script, index = found
+                _attach_script(parts, operator, script)
+                continue
+        _add_plain(parts, source[index])
+        index += 1
+    return "".join(parts)
+
+
+def _prepare_label(text: str | None, families: tuple[str, ...]) -> str:
+    formatted = format_axis_label(text)
+    _ensure_cjk_font(formatted, families)
+    return formatted
+
+
+def _rc_for_font(face: str | list | tuple, text_sizes: dict, *, embed: bool) -> dict:
+    rc = {"font.family": face, "font.size": text_sizes["tick"],
+          "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
+          "xtick.labelsize": text_sizes["tick"], "ytick.labelsize": text_sizes["tick"],
+          "savefig.facecolor": "white"}
+    if embed:
+        rc.update({"svg.fonttype": "none", "pdf.fonttype": 42, "ps.fonttype": 42})
+    if any(family in _CJK_FACES for family in _font_families(face)):
+        rc["axes.unicode_minus"] = False
+    return rc
 
 
 def _frame(data: pd.DataFrame | dict | np.ndarray, kind: str) -> pd.DataFrame:
@@ -1149,6 +1347,7 @@ def render_plot(
                                     or not np.isfinite(marker_size) or not 0 < float(marker_size) <= 20):
         raise ValueError("marker_size must be a positive finite value up to 20 for point-line, scatter and mixed.")
     face = resolve_font(font)
+    families = _font_families(face)
     frame = _frame(data, kind)
     if kind in (*SERIES_KINDS, "mixed"):
         _required(frame, x, y)
@@ -1162,11 +1361,7 @@ def render_plot(
         comparisons, error_metadata = _comparison_errors(values, x, y, error)
     error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale, yscale=yscale)
     text_sizes = TEXT_SIZES_PT[size]
-    with mpl.rc_context({"font.family": face, "font.size": text_sizes["tick"],
-                         "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
-                         "xtick.labelsize": text_sizes["tick"], "ytick.labelsize": text_sizes["tick"],
-                         "svg.fonttype": "none", "pdf.fonttype": 42, "ps.fonttype": 42,
-                         "savefig.facecolor": "white"}):
+    with mpl.rc_context(_rc_for_font(face, text_sizes, embed=True)):
         width_mm, _preset_height = SIZES_MM[size]
         resolved_height = resolve_height(size, height_mm)
         hosted = host_axes is not None
@@ -1242,8 +1437,9 @@ def render_plot(
                         index = next(index for index, (name, _) in enumerate(values) if name == label)
                         error_artists[label] = _draw_series(error_axes, coordinates, differences, label,
                                                            styles[label], index, palette[index])
-                    error_axes.set_ylabel(error.get("ylabel", {"signed": "Signed error", "absolute": "Absolute error",
-                                                               "relative": "Relative error (-)"}[error_metadata["definition"]]))
+                    error_axes.set_ylabel(_prepare_label(error.get(
+                        "ylabel", {"signed": "Signed error", "absolute": "Absolute error",
+                                   "relative": "Relative error (-)"}[error_metadata["definition"]]), families))
             else:
                 _numeric(frame, y)
                 ordered = _ordered_groups(frame, group, group_kind)
@@ -1298,7 +1494,8 @@ def render_plot(
             axes.set_xticks(np.arange(frame.shape[1]), [str(item) for item in frame.columns])
             axes.set_yticks(np.arange(frame.shape[0]), [str(item) for item in frame.index])
             axes.tick_params(which="minor", bottom=False, left=False, top=False, right=False)
-            figure.colorbar(image, ax=axes, label=value or "Value", fraction=0.05, pad=0.03)
+            figure.colorbar(image, ax=axes, label=_prepare_label(value or "Value", families),
+                            fraction=0.05, pad=0.03)
         else:
             _required(frame, y)
             _numeric(frame, y)
@@ -1318,8 +1515,8 @@ def render_plot(
                 parts[key].set_color("#333333")
             axes.set_xticks(np.arange(1, len(categories) + 1), [str(category) for category in categories])
         label_axes = error_axes if error_axes is not None else axes
-        label_axes.set_xlabel(xlabel if xlabel is not None else (x or ""))
-        axes.set_ylabel(ylabel if ylabel is not None else (y or value or ""))
+        label_axes.set_xlabel(_prepare_label(xlabel if xlabel is not None else (x or ""), families))
+        axes.set_ylabel(_prepare_label(ylabel if ylabel is not None else (y or value or ""), families))
         if title:
             axes.set_title(title)
         if apply_layout:
@@ -1445,10 +1642,7 @@ def render_multipanel(
     letters = [f"({chr(ord('a') + index)})" for index in range(count)]
     draw_keys = ("kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
                  "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend")
-    with mpl.rc_context({"font.family": face, "font.size": text_sizes["tick"],
-                         "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
-                         "xtick.labelsize": text_sizes["tick"], "ytick.labelsize": text_sizes["tick"],
-                         "savefig.facecolor": "white"}):
+    with mpl.rc_context(_rc_for_font(face, text_sizes, embed=False)):
         figure = plt.figure(figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120)
         figure.scientific_error_axes = None
         figure.scientific_metadata = {
@@ -1567,10 +1761,12 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--value", help="Heatmap value column (long-form data)")
     parser.add_argument("--group")
     parser.add_argument("--group-kind", choices=("auto", "ordered", "categorical"), default="auto")
-    parser.add_argument("--xlabel")
-    parser.add_argument("--ylabel")
+    parser.add_argument("--xlabel",
+                        help=r"Axis name. Scripts: t^*, t^+, t_{wall}, \(t^*\), or $t^*$")
+    parser.add_argument("--ylabel", help="Axis name. Same superscripts and subscripts as --xlabel")
     parser.add_argument("--title")
-    parser.add_argument("--font", choices=tuple(FONTS), default="Arial")
+    parser.add_argument("--font", choices=FONT_CHOICES, default="Arial",
+                        help="Arial, Times New Roman, 思源黑体, or 思源宋体")
     parser.add_argument("--size", choices=(*SIZES_MM, "multipanel"), default=None)
     parser.add_argument("--journal", choices=tuple(JOURNALS), default="elsevier")
     parser.add_argument("--height-mm", type=float, dest="height_mm")

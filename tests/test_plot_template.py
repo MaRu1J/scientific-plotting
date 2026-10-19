@@ -18,7 +18,8 @@ TEMPLATE = ROOT / "scientific-plotting" / "scripts" / "plot_template.py"
 sys.path.insert(0, str(TEMPLATE.parent))
 
 from plot_template import (CATEGORICAL_COLORS, MARKERS, ORDERED_COLORS, SCATTER_DENSE_PT, SCATTER_SPARSE_PT,
-                           TEXT_SIZES_PT, _line_vertices, _palette, connected_stroke, render_plot, resolve_font)
+                           TEXT_SIZES_PT, _line_vertices, _palette, connected_stroke, format_axis_label,
+                           render_plot, resolve_font)
 
 
 @pytest.fixture
@@ -178,6 +179,87 @@ def test_font_fallback_is_reported(monkeypatch):
         assert resolve_font("Arial") == "Liberation Sans"
     with pytest.warns(UserWarning, match="Times New Roman not installed"):
         assert resolve_font("Times New Roman") == "Liberation Serif"
+    with pytest.raises(RuntimeError, match="思源黑体"):
+        resolve_font("思源黑体")
+
+
+def test_chinese_fonts_prefer_source_han_and_warn_on_fallback(monkeypatch):
+    from matplotlib import font_manager
+
+    monkeypatch.setattr(font_manager.fontManager, "ttflist", [
+        type("FontEntry", (), {"name": "Noto Sans CJK SC"})(),
+        type("FontEntry", (), {"name": "Noto Serif CJK SC"})(),
+        type("FontEntry", (), {"name": "WenQuanYi Micro Hei"})(),
+        type("FontEntry", (), {"name": "AR PL UMing CN"})(),
+    ])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        assert resolve_font("思源黑体") == "Noto Sans CJK SC"
+        assert resolve_font("Noto Sans CJK SC") == "Noto Sans CJK SC"
+        assert resolve_font("Source Han Sans SC") == "Noto Sans CJK SC"
+        assert resolve_font("思源宋体") == "Noto Serif CJK SC"
+    monkeypatch.setattr(font_manager.fontManager, "ttflist", [
+        type("FontEntry", (), {"name": "WenQuanYi Micro Hei"})(),
+        type("FontEntry", (), {"name": "AR PL UMing CN"})(),
+    ])
+    with pytest.warns(UserWarning, match="思源黑体 not installed"):
+        assert resolve_font("思源黑体") == "WenQuanYi Micro Hei"
+    with pytest.warns(UserWarning, match="思源宋体 not installed"):
+        assert resolve_font("思源宋体") == "AR PL UMing CN"
+    with pytest.raises(ValueError, match="思源黑体"):
+        resolve_font("Comic Sans MS")
+
+
+@pytest.mark.parametrize(("source", "expected"), [
+    ("t^*", r"$t^{*}$"),
+    ("t^+", r"$t^{+}$"),
+    (r"\( t^* \)", r"$t^*$"),
+    (r"\(t^+\)", r"$t^+$"),
+    ("无量纲时间 t^*", "无量纲时间 $t^{*}$"),
+    (r"无量纲时间 \(t^*\)", "无量纲时间 $t^*$"),
+    (r"Wall distance, $y^+$", r"Wall distance, $y^+$"),
+    ("t_{wall}", r"$t_{wall}$"),
+    ("10^-3", r"$10^{-3}$"),
+    ("x^2", r"$x^{2}$"),
+    ("Re_b", r"$Re_{b}$"),
+    ("t^*_w", r"$t^{*}_{w}$"),
+    ("Distance (m)", "Distance (m)"),
+    ("Radius, r/R", "Radius, r/R"),
+    (r"t\^*", "t^*"),
+    ("Velocity, u^+ (m/s)", r"Velocity, $u^{+}$ (m/s)"),
+])
+def test_axis_label_scripts(source, expected):
+    assert format_axis_label(source) == expected
+
+
+def test_chinese_axis_label_renders_scripts(tmp_path):
+    from matplotlib import font_manager
+
+    available = {entry.name for entry in font_manager.fontManager.ttflist}
+    if "Noto Sans CJK SC" not in available or "Noto Serif CJK SC" not in available:
+        pytest.skip("Noto CJK SC is not installed")
+    frame = pd.DataFrame({"x": [-1.0, 0.0, 1.0], "y": [1.0, 2.0, 1.5]})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        figure, axes, paths = render_plot(
+            frame, kind="line", x="x", y="y", font="思源黑体",
+            xlabel=r"无量纲时间 \(t^*\)", ylabel="速度 t^+", output=tmp_path / "sans")
+        figure.canvas.draw()
+        assert axes.get_xlabel() == r"无量纲时间 $t^*$"
+        assert axes.get_ylabel() == r"速度 $t^{+}$"
+        plt.close(figure)
+        figure, axes, _ = render_plot(
+            frame, kind="line", x="x", y="y", font="思源宋体",
+            xlabel="t^*", ylabel=r"壁面距离 \(y^+\)", output=tmp_path / "serif")
+        figure.canvas.draw()
+        assert axes.get_xlabel() == r"$t^{*}$"
+        assert axes.get_ylabel() == r"壁面距离 $y^+$"
+        plt.close(figure)
+    assert paths and paths[0].exists()
+    assert not any("Glyph" in str(item.message) for item in caught)
+    with pytest.warns(UserWarning, match="Arial not installed"):
+        with pytest.raises(ValueError, match="思源黑体"):
+            render_plot(frame, kind="line", x="x", y="y", xlabel="无量纲时间", ylabel="t^*")
 
 
 def test_cli_exports_requested_formats_and_reproducible_scripts(tmp_path):
