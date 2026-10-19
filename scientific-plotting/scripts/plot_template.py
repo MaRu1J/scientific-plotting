@@ -298,6 +298,99 @@ def _line_vertices(axes: mpl.axes.Axes) -> np.ndarray:
     return np.concatenate(sampled) if sampled else np.empty((0, 2))
 
 
+def _extents_overlap(first, second, pad: float) -> bool:
+    return not (first.x1 <= second.x0 - pad or second.x1 <= first.x0 - pad
+                or first.y1 <= second.y0 - pad or second.y1 <= first.y0 - pad)
+
+
+def _layout_boxes(figure: mpl.figure.Figure):
+    renderer = figure.canvas.get_renderer()
+    boxes = []
+    for panel in figure.axes:
+        boxes.append(panel.get_window_extent(renderer))
+        texts = [panel.title, panel.xaxis.label, panel.yaxis.label,
+                 panel.xaxis.get_offset_text(), panel.yaxis.get_offset_text()]
+        for axis in (panel.xaxis, panel.yaxis):
+            texts.extend(tick.label1 for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks()))
+        for text in texts:
+            if text.get_visible() and text.get_text().strip():
+                boxes.append(text.get_window_extent(renderer))
+    return boxes
+
+
+def _outside_legend_is_clear(figure: mpl.figure.Figure, legend) -> bool:
+    box = legend.get_window_extent(figure.canvas.get_renderer())
+    if box.x0 < 2 or box.y0 < 2 or box.x1 > figure.bbox.x1 - 2 or box.y1 > figure.bbox.y1 - 2:
+        return False
+    if box.height > figure.bbox.height * 0.35 or figure.subplotpars.top - figure.subplotpars.bottom < 0.4:
+        return False
+    pad = 4 * figure.dpi / 72
+    return all(not _extents_overlap(box, other, pad) for other in _layout_boxes(figure))
+
+
+def _place_outside_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, legend_size: float) -> bool:
+    """Put the legend in a top band, then a bottom band. Never use a side column."""
+    handles, labels = axes.get_legend_handles_labels()
+    saved = (figure.subplotpars.left, figure.subplotpars.bottom, figure.subplotpars.right, figure.subplotpars.top)
+    pad = 6 * figure.dpi / 72
+
+    def restore() -> None:
+        figure.subplots_adjust(left=saved[0], bottom=saved[1], right=saved[2], top=saved[3])
+
+    for side, loc, anchor in (("top", "upper center", (0.5, 0.99)), ("bottom", "lower center", (0.5, 0.01))):
+        for columns in range(len(handles), 0, -1):
+            restore()
+            legend = axes.legend(handles, labels, loc=loc, bbox_to_anchor=anchor, bbox_transform=figure.transFigure,
+                                 ncol=columns, frameon=True, framealpha=1, facecolor="white", edgecolor="#777777",
+                                 fontsize=legend_size)
+            figure.canvas.draw()
+            box = legend.get_window_extent(figure.canvas.get_renderer())
+            if box.x0 < 2 or box.x1 > figure.bbox.x1 - 2 or box.height > figure.bbox.height * 0.35:
+                legend.remove()
+                continue
+            if side == "top":
+                edge = (box.y0 - pad) / figure.bbox.height
+                if edge - saved[1] < 0.4:
+                    legend.remove()
+                    continue
+                figure.subplots_adjust(top=min(saved[3], edge))
+            else:
+                edge = (box.y1 + pad) / figure.bbox.height
+                if saved[3] - edge < 0.4:
+                    legend.remove()
+                    continue
+                figure.subplots_adjust(bottom=max(saved[1], edge))
+            figure.canvas.draw()
+            box = legend.get_window_extent(figure.canvas.get_renderer())
+            intrusion = 0
+            for other in _layout_boxes(figure):
+                if not _extents_overlap(box, other, pad):
+                    continue
+                if side == "top":
+                    intrusion = max(intrusion, other.y1 + pad - box.y0)
+                else:
+                    intrusion = max(intrusion, box.y1 + pad - other.y0)
+            if intrusion:
+                if side == "top":
+                    edge = figure.subplotpars.top - intrusion / figure.bbox.height
+                    if edge - figure.subplotpars.bottom < 0.4:
+                        legend.remove()
+                        continue
+                    figure.subplots_adjust(top=edge)
+                else:
+                    edge = figure.subplotpars.bottom + intrusion / figure.bbox.height
+                    if figure.subplotpars.top - edge < 0.4:
+                        legend.remove()
+                        continue
+                    figure.subplots_adjust(bottom=edge)
+                figure.canvas.draw()
+            if _outside_legend_is_clear(figure, legend):
+                return True
+            legend.remove()
+    restore()
+    return False
+
+
 def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
                   placement: str = "auto") -> None:
     handles, labels = axes.get_legend_handles_labels()
@@ -312,7 +405,8 @@ def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
                  if isinstance(collection, PathCollection) and len(collection.get_sizes()))
     clearance = max(radii, default=0) * figure.dpi / 72 + 3
     legend_size = TEXT_SIZES_PT[size]["legend"]
-    locations = ("upper center", "upper right", "upper left", "lower right", "lower left", "lower center", "center right", "center left")
+    locations = ("upper center", "upper right", "upper left", "lower right", "lower left",
+                 "lower center", "center right", "center left")
     for columns in range(min(3, len(handles)), 0, -1) if placement == "auto" else ():
         for location in locations:
             legend = axes.legend(loc=location, ncol=columns, frameon=True, framealpha=1,
@@ -328,30 +422,9 @@ def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
     if size == "single":
         warnings.warn("Legend moved outside the single-column plot; consider --size double to preserve plot area.",
                       stacklevel=2)
-    previous_right = figure.subplotpars.right
-    figure.subplots_adjust(right=0.72)
-    legend = axes.legend(loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=legend_size, frameon=True,
-                         facecolor="white", edgecolor="#777777")
-    figure.canvas.draw()
-    box = legend.get_window_extent(figure.canvas.get_renderer())
-    if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
-        legend.remove()
-        figure.subplots_adjust(right=previous_right)
-        for columns in range(min(3, len(handles)), 0, -1):
-            legend = axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.985),
-                                 bbox_transform=figure.transFigure, ncol=columns, fontsize=legend_size,
-                                 frameon=True, facecolor="white", edgecolor="#777777")
-            figure.canvas.draw()
-            box = legend.get_window_extent(figure.canvas.get_renderer())
-            if (box.x0 >= 4 and box.x1 <= figure.bbox.x1 - 4 and box.height <= figure.bbox.height * .35):
-                gap = (28 if axes.get_title() else 10) * figure.dpi / 72
-                top = (box.y0 - gap) / figure.bbox.height
-                if top - figure.subplotpars.bottom >= .4:
-                    figure.subplots_adjust(top=min(figure.subplotpars.top, top))
-                    figure.canvas.draw()
-                    return
-            legend.remove()
-        raise ValueError("Legend does not fit this preset; select a larger size or simplify labels.")
+    if _place_outside_legend(figure, axes, legend_size):
+        return
+    raise ValueError("Legend does not fit this preset; select a larger size or simplify labels.")
 
 
 def _copy_identity(source, target) -> None:

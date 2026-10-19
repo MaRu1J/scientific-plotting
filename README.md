@@ -103,7 +103,7 @@ plt.close(figure)
   --output /path/to/figures/profile
 ```
 
-纯线不接受点形，纯散点不接受连接线型。原生 `line` / `point-line` 可以改外观，但不能在配置里改系列类型。`--legend outside` 会把图例放到图外：优先右侧，长标签再试上方；不缩小字号，也不加大画布，放不下就报错。
+纯线不接受点形，纯散点不接受连接线型。原生 `line` / `point-line` 可以改外观，但不能在配置里改系列类型。`--legend outside` 会跳过框内位置，把图例排成图顶的横条，顶上放不下再放到底部；不放在左右两侧，不缩小字号，也不加大画布，放不下就报错。论文图不要在图内写标题，标题交给 Fig. N 图注。
 
 ```python
 figure, axes, paths = render_plot(

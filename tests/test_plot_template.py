@@ -260,7 +260,45 @@ def test_crowded_single_legend_does_not_shrink_font():
                                           group="series", size="single")
     assert all(label.get_fontsize() == TEXT_SIZES_PT["single"]["legend"]
                for label in axes.get_legend().get_texts())
-    assert axes.get_position().x1 <= 0.72
+    legend_box = axes.get_legend().get_window_extent(figure.canvas.get_renderer())
+    axes_box = axes.get_window_extent(figure.canvas.get_renderer())
+    assert legend_box.y0 >= axes_box.y1 - 1 or legend_box.y1 <= axes_box.y0 + 1
+    assert axes_box.x0 < legend_box.x1 and legend_box.x0 < axes_box.x1
+    assert axes.get_position().x1 > 0.85
+    plt.close(figure)
+
+
+def test_open_corner_keeps_legend_inside_and_omits_figure_title():
+    radius = np.linspace(0, 1, 40)
+    exact = 2 * (1 - radius ** 2)
+    frame = pd.DataFrame({"x": np.r_[radius, radius], "y": np.r_[exact, exact * 0.98],
+                          "series": ["Exact"] * len(radius) + ["CFD"] * len(radius)})
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Arial not installed")
+        figure, axes, _ = render_plot(frame, kind="line", x="x", y="y", group="series", size="double",
+                                      xlabel="Radius, r/R", ylabel="Axial velocity, u/Ub")
+    assert axes.get_title() == ""
+    legend_box = axes.get_legend().get_window_extent(figure.canvas.get_renderer())
+    axes_box = axes.get_window_extent(figure.canvas.get_renderer())
+    assert axes_box.contains(*legend_box.p0) and axes_box.contains(*legend_box.p1)
+    assert axes.get_position().x1 > 0.85
+    plt.close(figure)
+
+
+def test_outside_legend_uses_top_band_without_narrowing_the_axes():
+    frame = pd.DataFrame({"x": np.tile(np.linspace(0, 1, 8), 3),
+                          "y": np.r_[np.linspace(0, 1, 8), np.linspace(0.2, 0.8, 8), np.linspace(1, 0, 8)],
+                          "series": ["Theoretical reference"] * 8 + ["Numerical result (synth.)"] * 8
+                          + ["Measurement (synth.)"] * 8})
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Arial not installed")
+        figure, axes, _ = render_plot(frame, kind="line", x="x", y="y", group="series", size="double",
+                                      legend="outside", xlabel="Radius, r/R", ylabel="Velocity, u/Ub")
+    legend_box = axes.get_legend().get_window_extent(figure.canvas.get_renderer())
+    axes_box = axes.get_window_extent(figure.canvas.get_renderer())
+    assert legend_box.y0 >= axes_box.y1 - 1
+    assert axes.get_position().x1 > 0.85
+    assert figure.subplotpars.right > 0.85
     plt.close(figure)
 
 
