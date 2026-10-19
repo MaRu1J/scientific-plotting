@@ -55,7 +55,7 @@ def test_cfd_renderer_preserves_nonmonotonic_order_and_artist_semantics(tmp_path
             "xlabel": "x (-)", "ylabel": "y (-)", "title": "CFD regression", "group_kind": "categorical", "scale": "linear"}
     audit = CFD.render_case(template, case, tmp_path)
     assert audit["legend_sample_hits"] == 0
-    assert audit["png_pixels"] == [2161, 1606]
+    assert audit["image_pixels"] == [int(190 / 25.4 * 300), int(142.5 / 25.4 * 300)]
     assert bool(audit["marker_sizes_pt"]) == (kind == "point-line")
 
 
@@ -87,4 +87,4 @@ def test_long_form_heatmap_retains_value_column_and_cli_support(tmp_path):
     subprocess.run([sys.executable, str(source), "--input", str(input_path), "--kind", "heatmap",
                     "--x", "station", "--y", "radius", "--value", "velocity", "--output", str(tmp_path / "field")],
                    check=True, capture_output=True, text=True)
-    assert (tmp_path / "field.png").exists()
+    assert (tmp_path / "field.jpg").exists()

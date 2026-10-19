@@ -133,9 +133,9 @@ def build_cases():
                   "Fine (synth.)": "Fine-grid numerical illustration (synthetic)",
                   "Samples (synth.)": "Measurement illustration (synthetic)"}
     add("10_long_legend_times", [frame.replace({"series": long_names}) for frame in pipe], pipe_source,
-        pipe_parameters + " Times requested; outside legend; explicit per-series sizes 1.8 pt/4 pt where applicable.",
+        pipe_parameters + " Times requested; outside legend; explicit per-series sizes 1.5 pt/4 pt where applicable.",
         kind="mixed", font="Times New Roman", legend="outside",
-        series_styles={long_names[label]: {**style, **({"line_width": 1.8} if style["kind"] != "scatter" else {}),
+        series_styles={long_names[label]: {**style, **({"line_width": 1.5} if style["kind"] != "scatter" else {}),
                                           **({"marker_size": 4} if style["kind"] != "line" else {})}
                        for label, style in pipe_styles.items()},
         error={**pipe_error, "reference": long_names["Theory"]}, xlabel="Radius, r/R", ylabel="Velocity, u/Ub")

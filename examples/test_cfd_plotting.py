@@ -354,9 +354,9 @@ def audit_plot(template, case: dict, figure, axes) -> dict:
                                    & (vertices[:, 1] >= bounds.y0) & (vertices[:, 1] <= bounds.y1)))
         assert hits == 0
         assert all(text.get_fontsize() == template.TEXT_SIZES_PT["double"]["legend"] for text in legend.get_texts())
-    np.testing.assert_allclose(figure.get_size_inches() * 25.4, [183, 136])
+    np.testing.assert_allclose(figure.get_size_inches() * 25.4, [190, 142.5])
     assertions.extend(["four inward-ticked sides", "labels/legend inside canvas", "no sampled data covered by legend",
-                       "183 x 136 mm; double-column font sizes"])
+                       "190 x 142.5 mm; double-column font sizes"])
     return {"checks": assertions, "legend_sample_hits": hits, "line_count": len(axes.lines),
             "marker_sizes_pt": [line.get_markersize() for line in axes.lines] if kind == "point-line" else [],
             "line_widths_pt": [line.get_linewidth() for line in axes.lines], "font": axes.xaxis.label.get_fontfamily(),
@@ -391,13 +391,13 @@ def render_case(template, case: dict, output_dir: Path) -> dict:
                     template._place_legend(figure, axes, "double")
                     template._hide_edge_grids(axes)
                 audit = audit_plot(template, case, figure, axes)
-                output = output_dir / (case["id"] + ".png")
-                figure.savefig(output, dpi=300, facecolor="white")
+                output = output_dir / (case["id"] + ".jpg")
+                figure.savefig(output, format="jpeg", dpi=300, facecolor="white", pil_kwargs={"quality": 95, "subsampling": 0})
                 with Image.open(output) as image:
-                    expected = tuple(int(length / 25.4 * 300) for length in (183, 136))
+                    expected = tuple(int(length / 25.4 * 300) for length in (190, 142.5))
                     assert image.size == expected
-                    audit["png_pixels"] = list(image.size)
-                    audit["png_dpi"] = list(image.info.get("dpi", ()))
+                    audit["image_pixels"] = list(image.size)
+                    audit["image_dpi"] = list(image.info.get("dpi", ()))
         finally:
             plt.close(figure)
     audit["warnings"] = list(dict.fromkeys(str(item.message) for item in caught))
@@ -409,7 +409,7 @@ def make_contact_sheet(output_dir: Path, filenames: list[str], name: str) -> Non
     canvas = Image.new("RGB", (thumb_width * 2, (thumb_height + 30) * ((len(filenames) + 1) // 2)), "white")
     drawing = ImageDraw.Draw(canvas)
     for index, filename in enumerate(filenames):
-        with Image.open(output_dir / (filename + ".png")) as image:
+        with Image.open(output_dir / (filename + ".jpg")) as image:
             image.thumbnail((thumb_width, thumb_height), Image.Resampling.LANCZOS)
             left, top = index % 2 * thumb_width, index // 2 * (thumb_height + 30)
             canvas.paste(image.convert("RGB"), (left, top + 30))
@@ -423,7 +423,7 @@ def write_reports(output_dir: Path, manifest: dict) -> None:
               "完成 5 张 line、5 张 point-line、2 张混合补充图和 4 张其他图，共 16 张。",
               "所有 line 数据系列均无标记；所有 point-line 数据系列均有标记且连线。混合图不冒充 point-line。",
               "真实 DNS 来源为首选 Kawamura Lab；NASA 备用源未启用。合成 CFD/测量/残差均明确标注，不能用来声称物理模型获得验证。",
-              "所有图为双栏 183 × 136 mm、300 dpi、仅 PNG；原始数据未平滑或抽稀。", "",
+              "所有图为双栏 190 × 142.5 mm、300 dpi、仅 JPEG；原始数据未平滑或抽稀。", "",
               "## 数据溯源", "", f"数据库主页：{SOURCE_URL}", "",
               "原始文件保留作者署名、引用要求和使用说明；数据不是本项目原创，也不假定为无条件开放许可。", "",
               "Re_tau=u_tau*h/nu，Re_bulk=Ub*2h/nu；u+=u/u_tau，y+=y*u_tau/nu；h 为半通道高度。", ""]
@@ -433,7 +433,7 @@ def write_reports(output_dir: Path, manifest: dict) -> None:
     report.extend(["", "引用应按原文件的 References 节选择，尤其注意不同 Reynolds 数与数据版本的出处不同。", "",
                    "## 逐图记录（按执行顺序）", ""])
     for case in manifest["cases"]:
-        report.extend([f"### {case['id']} — {case['kind']}", "", f"![{case['id']}]({case['id']}.png)", "",
+        report.extend([f"### {case['id']} — {case['kind']}", "", f"![{case['id']}]({case['id']}.jpg)", "",
                        f"- 数据来源：{case['source']}", f"- 物理含义：{case['meaning']}",
                        f"- 关键参数：{case['parameters']}", f"- CSV：`{case['csv']}`；数据行数：{case['rows']}。",
                        "- 自动检查：" + "；".join(case["audit"]["checks"]) + "。", ""])
@@ -475,8 +475,8 @@ def write_reports(output_dir: Path, manifest: dict) -> None:
             if not case["id"].startswith(prefix):
                 continue
             identifier = case["id"]
-            cards.append(f'<article><h3>{html.escape(identifier)}</h3><a href="{identifier}.png">'
-                         f'<img src="{identifier}.png" alt="{identifier}"></a>'
+            cards.append(f'<article><h3>{html.escape(identifier)}</h3><a href="{identifier}.jpg">'
+                         f'<img src="{identifier}.jpg" alt="{identifier}"></a>'
                          f'<p><b>来源：</b>{html.escape(case["source"])}</p>'
                          f'<p><b>含义：</b>{html.escape(case["meaning"])}</p>'
                          f'<p><b>参数：</b>{html.escape(case["parameters"])}</p></article>')
@@ -545,7 +545,7 @@ def main(argv: list[str] | None = None) -> None:
                 '    "--output-dir", str(root)], check=True)\n')
     (output_dir / "reproduce.py").write_text(launcher, encoding="utf-8")
     write_reports(output_dir, manifest)
-    for prefix, sheet in (("A", "overview_line.png"), ("B0", "overview_pointline.png"), ("C", "overview_other.png")):
+    for prefix, sheet in (("A", "overview_line.jpg"), ("B0", "overview_pointline.jpg"), ("C", "overview_other.jpg")):
         identifiers = [case["id"] for case in cases if case["id"].startswith(prefix)
                        and (prefix != "B0" or case["kind"] == "point-line")]
         make_contact_sheet(output_dir, identifiers, sheet)

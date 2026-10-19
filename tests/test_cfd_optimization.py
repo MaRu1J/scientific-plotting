@@ -32,9 +32,9 @@ def mixed_data():
 
 
 def mixed_styles():
-    return {"Theory": {"kind": "line", "linestyle": "--", "color": "#126b80", "line_width": 2},
+    return {"Theory": {"kind": "line", "linestyle": "--", "color": "#126b80", "line_width": 1.5},
             "CFD (synth.)": {"kind": "point-line", "marker": "s", "linestyle": "-.",
-                              "line_width": 1.7, "marker_size": 4},
+                              "line_width": 1.2, "marker_size": 4},
             "Samples (synth.)": {"kind": "scatter", "marker": "^", "marker_size": 6}}
 
 
@@ -73,7 +73,7 @@ def test_mixed_explicit_styles_preserve_data_and_semantics():
     assert axes.lines[0].get_color() == "#126b80"
     assert axes.lines[1].get_marker() == "s"
     assert axes.lines[1].get_linestyle() == "-."
-    assert axes.lines[0].get_linewidth() == 2
+    assert axes.lines[0].get_linewidth() == 1.5
     assert axes.lines[1].get_markersize() == 4
     np.testing.assert_array_equal(axes.collections[0].get_sizes(), [36] * 3)
     for line in axes.lines:
@@ -102,11 +102,11 @@ def test_cli_log_mixed_reproducer_pins_style_config(tmp_path):
                              "--xscale", "log", "--series-config", str(style_path),
                              "--output", str(tmp_path / "mixed")], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    original = (tmp_path / "mixed.png").read_bytes()
+    original = (tmp_path / "mixed.jpg").read_bytes()
     style_path.unlink()
     subprocess.run([sys.executable, str(tmp_path / "mixed_reproduce.py")], check=True, capture_output=True)
-    assert (tmp_path / "mixed.png").read_bytes() == original
-    assert {path.suffix for path in tmp_path.glob("mixed.*")} == {".png"}
+    assert (tmp_path / "mixed.jpg").read_bytes() == original
+    assert {path.suffix for path in tmp_path.glob("mixed.*")} == {".jpg"}
 
 
 @pytest.mark.parametrize("definition", ["signed", "absolute", "relative"])
@@ -190,7 +190,7 @@ def test_density_uses_each_series_final_transform(scale):
     for line in axes.lines:
         vertices = axes.transData.transform(np.c_[line.get_xdata(), line.get_ydata()])
         spacing = np.median(np.linalg.norm(np.diff(vertices, axis=0), axis=1))
-        expected = 1.2 if spacing < 4 else 1.35 if spacing < 12 else 1.8 if spacing >= 26 else 1.45
+        expected = 0.7 if spacing < 4 else 1.0 if spacing < 12 else 1.5 if spacing >= 26 else 1.2
         assert line.get_linewidth() == expected
     assert len(axes.lines[1].get_xdata()) == 1001
     assert axes.lines[1].get_markevery() is None
@@ -211,8 +211,8 @@ def test_explicit_sizes_override_auto_per_series_then_global():
     frame = pd.DataFrame({"x": np.tile(np.linspace(0, 1, 1001), 2), "y": np.ones(2002),
                           "series": ["A"] * 1001 + ["B"] * 1001})
     _, axes, _ = render_plot(frame, kind="point-line", x="x", y="y", group="series", size="double",
-                             line_width=2.2, marker_size=6, series_styles={"A": {"line_width": 1.8, "marker_size": 4}})
-    assert [line.get_linewidth() for line in axes.lines] == [1.8, 2.2]
+                             line_width=1.4, marker_size=6, series_styles={"A": {"line_width": 1.1, "marker_size": 4}})
+    assert [line.get_linewidth() for line in axes.lines] == [1.1, 1.4]
     assert [line.get_markersize() for line in axes.lines] == [4, 6]
 
 
@@ -245,7 +245,7 @@ def test_ylog_density_is_measured_in_log_display_space():
     _, axes, _ = render_plot({"x": np.ones(5), "y": np.geomspace(1e-10, 1, 5)},
                              kind="point-line", x="x", y="y", yscale="log", size="double")
     assert axes.lines[0].get_markersize() == 6.2
-    assert axes.lines[0].get_linewidth() == 1.8
+    assert axes.lines[0].get_linewidth() == 1.5
 
 
 def test_sparse_scatter_size_is_independent_of_overlapping_dense_series():

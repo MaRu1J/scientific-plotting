@@ -31,7 +31,7 @@ def observations():
 
 
 @pytest.mark.parametrize("kind", ["point-line", "line", "bar", "scatter", "heatmap", "violin"])
-def test_six_kinds_export_png(tmp_path, observations, kind):
+def test_six_kinds_export_jpeg(tmp_path, observations, kind):
     if kind == "heatmap":
         data = np.array([[1.0, 2.0], [3.0, 4.0]])
         mappings = {}
@@ -46,7 +46,7 @@ def test_six_kinds_export_png(tmp_path, observations, kind):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         figure, axes, paths = render_plot(data, kind=kind, output=tmp_path / kind, **mappings)
-    assert paths == [tmp_path / f"{kind}.png"]
+    assert paths == [tmp_path / f"{kind}.jpg"]
     assert paths[0].stat().st_size > 1000
     assert all(spine.get_visible() for spine in axes.spines.values())
     plt.close(figure)
@@ -186,30 +186,31 @@ def test_cli_exports_requested_formats_and_reproducible_scripts(tmp_path):
     target = tmp_path / "curve"
     args = [sys.executable, str(TEMPLATE), "--input", str(source), "--kind", "point-line",
             "--x", "distance", "--y", "measurement", "--output", str(target),
-            "--line-width", "2.1", "--marker-size", "6.5"]
+            "--line-width", "1.2", "--marker-size", "6.5"]
     subprocess.run(args, check=True, capture_output=True, text=True)
-    assert {entry.name for entry in tmp_path.glob("curve.*")} == {"curve.png"}
+    assert {entry.name for entry in tmp_path.glob("curve.*")} == {"curve.jpg"}
     assert (tmp_path / "curve_template.py").exists()
     wrapper = tmp_path / "curve_reproduce.py"
     assert wrapper.exists()
     assert "--line-width" in wrapper.read_text()
     assert "--marker-size" in wrapper.read_text()
-    target.with_suffix(".png").unlink()
+    target.with_suffix(".jpg").unlink()
     subprocess.run([sys.executable, str(wrapper)], check=True, capture_output=True, text=True)
-    assert target.with_suffix(".png").exists()
-    subprocess.run([*args, "--format", "svg", "--format", "pdf", "--format", "tiff", "--format", "eps"],
-                   check=True, capture_output=True, text=True)
-    for extension in ("svg", "pdf", "tiff", "eps"):
-        assert target.with_suffix("." + extension).stat().st_size > 500
+    assert target.with_suffix(".jpg").exists()
+    subprocess.run([*args, "--format", "tiff", "--dpi", "120"], check=True, capture_output=True, text=True)
+    assert (tmp_path / "curve.tiff").stat().st_size > 500
+    refused = subprocess.run([*args, "--format", "png"], capture_output=True, text=True)
+    assert refused.returncode != 0
+    assert "JPEG and TIFF" in refused.stderr
 
 
 def test_only_requested_format_is_written(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         figure, _, paths = render_plot({"x": [0, 1], "y": [1, 2]}, kind="line", x="x", y="y",
-                                       output=tmp_path / "vector", formats=["svg"])
-    assert paths == [tmp_path / "vector.svg"]
-    assert not (tmp_path / "vector.png").exists()
+                                       output=tmp_path / "vector", formats=["tiff"], dpi=120)
+    assert paths == [tmp_path / "vector.tiff"]
+    assert not (tmp_path / "vector.jpg").exists()
     plt.close(figure)
 
 
@@ -230,7 +231,7 @@ def test_interior_legend_does_not_cover_sampled_curve():
     plt.close(figure)
 
 
-@pytest.mark.parametrize("size", ["single", "double", "multipanel"])
+@pytest.mark.parametrize("size", ["single", "medium", "double", "aip-single", "aip-double"])
 def test_text_sizes_follow_physical_figure_preset(size):
     samples = pd.DataFrame({"x": [0, 1, 2, 0, 1, 2], "y": [1, 2, 1, 2, 3, 2],
                             "series": ["first"] * 3 + ["second"] * 3})
@@ -308,7 +309,7 @@ def test_excel_and_grouping_preserve_order(tmp_path):
     subprocess.run([sys.executable, str(TEMPLATE), "--input", str(source), "--kind", "point-line",
                     "--x", "time", "--y", "signal", "--output", str(tmp_path / "excel")],
                    check=True, capture_output=True, text=True)
-    assert (tmp_path / "excel.png").is_file()
+    assert (tmp_path / "excel.jpg").is_file()
 
 
 def test_fixed_export_dimensions(tmp_path):
@@ -318,19 +319,19 @@ def test_fixed_export_dimensions(tmp_path):
         warnings.simplefilter("ignore", UserWarning)
         figure, _, _ = render_plot({"time": [0, 1], "signal": [1, 2]}, kind="line",
                                    x="time", y="signal", size="single", output=tmp_path / "shape")
-    with Image.open(tmp_path / "shape.png") as image:
-        assert abs(image.width - 89 / 25.4 * 300) < 2
-        assert abs(image.height - 66 / 25.4 * 300) < 2
-        assert abs(image.width / image.height - 1336 / 994) < 0.01
+    with Image.open(tmp_path / "shape.jpg") as image:
+        assert abs(image.width - 90 / 25.4 * 300) < 2
+        assert abs(image.height - 67.5 / 25.4 * 300) < 2
+        assert abs(image.width / image.height - 4 / 3) < 0.02
     plt.close(figure)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         figure, _, _ = render_plot({"time": [0, 1], "signal": [1, 2]}, kind="line",
                                    x="time", y="signal", size="double", output=tmp_path / "double")
-    with Image.open(tmp_path / "double.png") as image:
-        assert abs(image.width - 183 / 25.4 * 300) < 2
-        assert abs(image.height - 136 / 25.4 * 300) < 2
-        assert abs(image.width / image.height - 1336 / 994) < 0.01
+    with Image.open(tmp_path / "double.jpg") as image:
+        assert abs(image.width - 190 / 25.4 * 300) < 2
+        assert abs(image.height - 142.5 / 25.4 * 300) < 2
+        assert abs(image.width / image.height - 4 / 3) < 0.02
     plt.close(figure)
 
 
@@ -342,12 +343,12 @@ def test_point_line_marks_and_strokes_follow_display_density():
         dense_figure, dense_axes, _ = render_plot({"x": np.linspace(0, 4, 400),
                                                    "y": np.sin(np.linspace(0, 4, 400))},
                                                  kind="point-line", x="x", y="y")
-    assert sparse_axes.lines[0].get_linewidth() == 1.8
+    assert sparse_axes.lines[0].get_linewidth() == 1.5
     assert sparse_axes.lines[0].get_markersize() == 6.2
     assert sparse_axes.lines[0].get_marker() == "o"
     assert colors.to_rgb(sparse_axes.lines[0].get_markerfacecolor()) == colors.to_rgb(sparse_axes.lines[0].get_color())
     assert colors.to_rgb(sparse_axes.lines[0].get_markeredgecolor()) == colors.to_rgb("white")
-    assert dense_axes.lines[0].get_linewidth() == 1.2
+    assert dense_axes.lines[0].get_linewidth() == 0.7
     assert dense_axes.lines[0].get_markersize() == 2.6
     assert colors.to_rgb(dense_axes.lines[0].get_markerfacecolor()) == colors.to_rgb(dense_axes.lines[0].get_color())
     assert colors.to_rgb(dense_axes.lines[0].get_markeredgecolor()) == colors.to_rgb(dense_axes.lines[0].get_color())
@@ -363,7 +364,7 @@ def test_overlapping_series_do_not_shrink_well_spaced_lines():
         warnings.simplefilter("ignore", UserWarning)
         line_figure, line_axes, _ = render_plot(shared, kind="line", x="x", y="y", group="series")
         scatter_figure, scatter_axes, _ = render_plot(shared, kind="scatter", x="x", y="y")
-    assert all(line.get_linewidth() == 1.8 for line in line_axes.lines)
+    assert all(line.get_linewidth() == 1.5 for line in line_axes.lines)
     assert all(line.get_marker() == "None" for line in line_axes.lines)
     assert np.all(scatter_axes.collections[0].get_sizes() == SCATTER_DENSE_PT ** 2)
     plt.close(line_figure)
@@ -394,7 +395,7 @@ def test_close_other_series_do_not_shrink_point_line_markers():
         warnings.simplefilter("ignore", UserWarning)
         figure, axes, _ = render_plot(points, kind="point-line", x="year", y="value",
                                      group="series", size="double")
-    assert all(line.get_linewidth() == 1.8 for line in axes.lines)
+    assert all(line.get_linewidth() == 1.5 for line in axes.lines)
     assert all(line.get_markersize() == 6.2 for line in axes.lines)
     assert [line.get_marker() for line in axes.lines] == ["o", "s"]
     plt.close(figure)
@@ -417,10 +418,10 @@ def test_explicit_marker_and_stroke_overrides():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         figure, axes, _ = render_plot(data, kind="point-line", x="x", y="y",
-                                     line_width=2.1, marker_size=6.5)
+                                     line_width=1.2, marker_size=6.5)
         scatter_figure, scatter_axes, _ = render_plot(data, kind="scatter", x="x", y="y",
                                                      marker_size=6.5)
-    assert axes.lines[0].get_linewidth() == 2.1
+    assert axes.lines[0].get_linewidth() == 1.2
     assert axes.lines[0].get_markersize() == 6.5
     assert scatter_axes.collections[0].get_sizes()[0] == 6.5 ** 2
     plt.close(figure)
@@ -437,4 +438,4 @@ def test_rejects_labels_that_would_be_cropped(tmp_path):
         with pytest.raises(ValueError, match="label is clipped"):
             render_plot({"x": [0, 1], "y": [1, 2]}, kind="line", x="x", y="y",
                         xlabel="Very long axis label " * 30, output=tmp_path / "cropped")
-    assert not (tmp_path / "cropped.png").exists()
+    assert not (tmp_path / "cropped.jpg").exists()

@@ -19,13 +19,40 @@ import numpy as np
 import pandas as pd
 
 
-SIZES_MM = {"single": (89, 66), "double": (183, 136), "multipanel": (183, 180)}
-TEXT_SIZES_PT = {
-    "single": {"label": 10, "tick": 8.5, "legend": 8.5, "title": 10.5},
-    "double": {"label": 11, "tick": 9.5, "legend": 9.5, "title": 11.5},
-    "multipanel": {"label": 11, "tick": 9.5, "legend": 9.5, "title": 11.5},
+SIZES_MM = {
+    "single": (90.0, 67.5),
+    "medium": (140.0, 105.0),
+    "double": (190.0, 142.5),
+    "aip-single": (85.0, 63.75),
+    "aip-double": (170.0, 127.5),
 }
-FORMATS = ("png", "svg", "pdf", "tiff", "eps")
+_NARROW_TEXT = {"label": 10, "tick": 8.5, "legend": 8.5, "title": 10.5}
+_WIDE_TEXT = {"label": 11, "tick": 9.5, "legend": 9.5, "title": 11.5}
+TEXT_SIZES_PT = {
+    "single": _NARROW_TEXT,
+    "aip-single": _NARROW_TEXT,
+    "medium": _WIDE_TEXT,
+    "double": _WIDE_TEXT,
+    "aip-double": _WIDE_TEXT,
+}
+FORMATS = ("jpeg", "tiff")
+REJECTED_FORMATS = ("png", "svg", "pdf", "eps")
+EXPORT_SUFFIX = {"jpeg": ".jpg", "tiff": ".tiff"}
+LINE_WIDTH_MIN_PT = 0.5
+LINE_WIDTH_MAX_PT = 1.5
+HEIGHT_MIN_MM = 40.0
+HEIGHT_MAX_MM = 210.0
+JPEG_QUALITY = 95
+SNAPSHOT_DATE = "2026-10-19"
+PANEL_CHROME_MM = 16.0
+JOURNALS = {
+    "elsevier": {"widths_mm": (90.0, 140.0, 190.0), "default_size": "single", "min_type_pt": 7,
+                 "tiff_line_dpi": 1000, "tiff_heatmap_dpi": 500},
+    "jfm": {"widths_mm": (90.0,), "default_size": "single", "min_type_pt": 9,
+            "tiff_line_dpi": 1200, "tiff_heatmap_dpi": 600},
+    "pof": {"widths_mm": (85.0, 170.0), "default_size": "aip-single", "min_type_pt": 8,
+            "tiff_line_dpi": 600, "tiff_heatmap_dpi": 600},
+}
 KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed")
 SERIES_KINDS = ("line", "point-line", "scatter")
 FONTS = {"Arial": "Liberation Sans", "Times New Roman": "Liberation Serif"}
@@ -167,12 +194,12 @@ def _palette(count: int, ordered: bool) -> list[str]:
 def connected_stroke(spacing: float) -> tuple[float, float]:
     """Line width and point-line marker diameter, in points, from within-series spacing."""
     if spacing < 4:
-        return 1.2, 2.6
+        return 0.7, 2.6
     if spacing < 12:
-        return 1.35, 3.8
+        return 1.0, 3.8
     if spacing < 26:
-        return 1.45, 5.0
-    return 1.8, 6.2
+        return 1.2, 5.0
+    return 1.5, 6.2
 
 
 def _marker_edge(diameter: float) -> tuple[str, float]:
@@ -427,7 +454,7 @@ def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
             if fits and hits == 0:
                 return
             legend.remove()
-    if size == "single":
+    if SIZES_MM[size][0] <= 90:
         warnings.warn("Legend moved outside the single-column plot; consider --size double to preserve plot area.",
                       stacklevel=2)
     if _place_outside_legend(figure, axes, legend_size):
@@ -482,12 +509,17 @@ def _check_text_layout(figure: mpl.figure.Figure) -> None:
             text_items.append(axis.get_offset_text())
             text_items.extend(tick.label1 for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())
                               if low <= tick.get_loc() <= high)
+        text_items.extend(text for text in panel_axes.texts if getattr(text, "_scientific_panel_letter", False))
         for text_item in text_items:
             if not text_item.get_visible() or not text_item.get_text():
                 continue
             box = text_item.get_window_extent(renderer)
             if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
                 raise ValueError("A label is clipped by this size preset; use a larger preset or shorter labels.")
+    for legend in figure.legends:
+        box = legend.get_window_extent(renderer)
+        if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
+            raise ValueError("Legend is clipped by this size preset.")
 
 
 def _series_options(values: list, kind: str, series_styles: dict | None,
@@ -518,12 +550,20 @@ def _series_options(values: list, kind: str, series_styles: dict | None,
             raise ValueError("point-line and scatter require visible markers.")
         if series_kind == "scatter" and "linestyle" in style:
             raise ValueError("scatter series cannot specify a connecting linestyle.")
-        for key, maximum, applicable in (("line_width", 8, series_kind != "scatter"),
-                                          ("marker_size", 20, series_kind != "line")):
+        for key, applicable in (("line_width", series_kind != "scatter"),
+                                ("marker_size", series_kind != "line")):
             override = style.get(key)
-            if override is not None and (not applicable or not isinstance(override, (int, float))
-                                         or not np.isfinite(override) or not 0 < override <= maximum):
-                raise ValueError(f"Invalid {key} for series {label!r}; maximum is {maximum} pt.")
+            if override is None:
+                continue
+            numeric = isinstance(override, (int, float)) and not isinstance(override, bool) and np.isfinite(override)
+            if key == "line_width":
+                allowed = numeric and LINE_WIDTH_MIN_PT <= float(override) <= LINE_WIDTH_MAX_PT
+                limit = f"{LINE_WIDTH_MIN_PT:g} to {LINE_WIDTH_MAX_PT:g}"
+            else:
+                allowed = numeric and 0 < float(override) <= 20
+                limit = "20"
+            if not applicable or not allowed:
+                raise ValueError(f"Invalid {key} for series {label!r}; allowed range is {limit} pt.")
         result[label] = {**style, "kind": series_kind,
                          "line_width": style.get("line_width", line_width),
                          "marker_size": style.get("marker_size", marker_size)}
@@ -552,6 +592,12 @@ def _draw_series(axes, x_values, y_values, label, style, index, color):
                             markeredgewidth=0.9)
         artist._scientific_linestyle = linestyle
     artist._scientific_style = style
+    artist._scientific_identity = (
+        series_kind,
+        colors.to_hex(color),
+        None if series_kind == "scatter" else str(artist.get_linestyle()),
+        None if series_kind == "line" else str(marker),
+    )
     return artist
 
 
@@ -770,6 +816,284 @@ def _draw_errorbars(axes, x_values, y_values, *, yerr, xerr, color, capsize: flo
             artist.set_markerfacecolor(color)
 
 
+def _finding(severity: str, rule: str, message: str, measured=None, expected=None) -> dict:
+    finding = {"severity": severity, "rule": rule, "message": message, "snapshot_date": SNAPSHOT_DATE}
+    if measured is not None:
+        finding["measured"] = measured
+    if expected is not None:
+        finding["expected"] = expected
+    return finding
+
+
+def resolve_size(size: str | None, journal: str) -> str:
+    """Pick a named width. An explicit width is never replaced by the journal."""
+    if journal not in JOURNALS:
+        raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
+    if size == "multipanel":
+        raise ValueError("size 'multipanel' was removed; use render_multipanel().")
+    if size is None:
+        size = JOURNALS[journal]["default_size"]
+    if size not in SIZES_MM:
+        raise ValueError(f"Unknown size {size!r}. Use one of: {', '.join(SIZES_MM)}.")
+    return size
+
+
+def resolve_height(size: str, height_mm: float | None) -> float:
+    if height_mm is None:
+        return SIZES_MM[size][1]
+    if isinstance(height_mm, bool) or not isinstance(height_mm, (int, float, np.floating)) or not np.isfinite(height_mm):
+        raise ValueError("height_mm must be a finite number from 40 to 210.")
+    if not HEIGHT_MIN_MM <= float(height_mm) <= HEIGHT_MAX_MM:
+        raise ValueError("height_mm must be between 40 and 210 mm.")
+    return float(height_mm)
+
+
+def resolve_formats(formats) -> tuple[str, ...]:
+    chosen = tuple(dict.fromkeys(formats if formats is not None else ("jpeg",)))
+    if not chosen:
+        raise ValueError("At least one format is required.")
+    rejected = [name for name in chosen if name in REJECTED_FORMATS]
+    if rejected:
+        raise ValueError("Only JPEG and TIFF can be exported; PNG, SVG, PDF and EPS are not supported. "
+                         f"Refused: {', '.join(rejected)}.")
+    unknown = [name for name in chosen if name not in FORMATS]
+    if unknown:
+        raise ValueError(f"Formats must be jpeg or tiff, not {', '.join(unknown)}.")
+    return chosen
+
+
+def submission_tiff_dpi(journal: str, heatmap: bool) -> int:
+    preset = JOURNALS[journal]
+    return preset["tiff_heatmap_dpi"] if heatmap else preset["tiff_line_dpi"]
+
+
+def resolve_dpi(dpi: int | None, formats: tuple[str, ...], journal: str, heatmap: bool) -> dict[str, int]:
+    if dpi is not None and (isinstance(dpi, bool) or not isinstance(dpi, (int, np.integer)) or not 72 <= int(dpi) <= 1200):
+        raise ValueError("DPI must be between 72 and 1200.")
+    resolved = {}
+    for name in formats:
+        if name == "jpeg" or dpi is not None:
+            resolved[name] = 300 if dpi is None else int(dpi)
+        else:
+            resolved[name] = submission_tiff_dpi(journal, heatmap)
+    return resolved
+
+
+def _log_spans(figure: mpl.figure.Figure) -> list[float]:
+    spans = []
+    for axes in figure.axes:
+        for axis, limits in ((axes.xaxis, axes.get_xlim()), (axes.yaxis, axes.get_ylim())):
+            if axis.get_scale() != "log":
+                continue
+            low, high = sorted(float(value) for value in limits)
+            if low > 0 and high > 0:
+                spans.append(abs(np.log10(high) - np.log10(low)))
+    return spans
+
+
+def _near(width: float, candidates: tuple[float, ...]) -> bool:
+    return any(abs(width - candidate) < 0.2 for candidate in candidates)
+
+
+def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> list[dict]:
+    """Report differences from the dated journal snapshot. Never a compliance verdict."""
+    metadata = getattr(figure, "scientific_metadata", {}) or {}
+    journal = journal or metadata.get("journal") or "elsevier"
+    if journal not in JOURNALS:
+        raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
+    preset = JOURNALS[journal]
+    findings = []
+    width = float(metadata.get("width_mm", figure.get_figwidth() * 25.4))
+    height = float(metadata.get("height_mm", figure.get_figheight() * 25.4))
+    if not _near(width, preset["widths_mm"]):
+        findings.append(_finding(
+            "warn", "width",
+            f"{width:g} mm is outside the {journal} snapshot widths "
+            f"{', '.join(f'{item:g}' for item in preset['widths_mm'])} mm. The requested width was kept.",
+            measured=width, expected=list(preset["widths_mm"])))
+    if journal == "jfm":
+        findings.append(_finding(
+            "info", "width",
+            "JFM is a single-column journal. The 2026-10-19 instructions did not state a millimetre text width, "
+            "so 90 mm is used until that width is confirmed.",
+            measured=width, expected=90))
+        findings.append(_finding(
+            "info", "color",
+            "The JFM instructions file specifies RGB, while the Cambridge artwork guide specifies CMYK. "
+            "This figure stays RGB and is not converted.",
+            measured="RGB", expected="RGB and CMYK disagree"))
+    if journal == "pof" and _near(width, (170,)):
+        findings.append(_finding(
+            "info", "width",
+            "170 mm is about 0.1 mm wider than AIP's stated 6.69 in (169.9 mm).",
+            measured=170, expected=169.9))
+    if height > HEIGHT_MAX_MM + 0.05 or height < HEIGHT_MIN_MM - 0.05:
+        findings.append(_finding(
+            "warn", "height",
+            f"Figure height {height:g} mm is outside 40–210 mm.",
+            measured=height, expected=[HEIGHT_MIN_MM, HEIGHT_MAX_MM]))
+    if metadata.get("height_clamped"):
+        findings.append(_finding(
+            "warn", "aspect",
+            "The 4:3 panel height exceeded 210 mm, so the figure height was stopped at 210 mm.",
+            measured=metadata.get("target_height_mm"), expected=HEIGHT_MAX_MM))
+    elif not metadata.get("multipanel") and metadata.get("size") in SIZES_MM and abs(height - SIZES_MM[metadata["size"]][1]) > 0.05:
+        findings.append(_finding(
+            "info", "aspect",
+            "Height leaves the 4:3 preset. Record why 4:3 could not show the data.",
+            measured=height, expected=SIZES_MM[metadata["size"]][1]))
+    sizes = []
+    for axes in figure.axes:
+        candidates = [axes.xaxis.label, axes.yaxis.label, *axes.get_xticklabels(), *axes.get_yticklabels()]
+        legend = axes.get_legend()
+        if legend is not None:
+            candidates.extend(legend.get_texts())
+        for text in candidates:
+            if text.get_visible() and text.get_text().strip():
+                sizes.append(float(text.get_fontsize()))
+    for legend in figure.legends:
+        sizes.extend(float(text.get_fontsize()) for text in legend.get_texts() if text.get_text().strip())
+    if sizes and min(sizes) + 1e-6 < preset["min_type_pt"]:
+        findings.append(_finding(
+            "warn", "type",
+            f"Smallest text is {min(sizes):g} pt, below the {journal} snapshot minimum of {preset['min_type_pt']} pt.",
+            measured=min(sizes), expected=preset["min_type_pt"]))
+    for axes in figure.axes:
+        for line in axes.lines:
+            if getattr(line, "_scientific_errorbar", False):
+                continue
+            width_pt = float(line.get_linewidth())
+            if width_pt < LINE_WIDTH_MIN_PT - 1e-6 or width_pt > LINE_WIDTH_MAX_PT + 1e-6:
+                findings.append(_finding(
+                    "warn", "line_width",
+                    f"A data line is {width_pt:g} pt, outside 0.5–1.5 pt.",
+                    measured=width_pt, expected=[LINE_WIDTH_MIN_PT, LINE_WIDTH_MAX_PT]))
+                break
+    if journal == "jfm":
+        findings.append(_finding(
+            "info", "grid",
+            "Minor gridlines stay at 0.45 pt, slightly under the JFM 0.5 pt minimum. They were not changed.",
+            measured=0.45, expected=0.5))
+    spans = _log_spans(figure)
+    if any(span >= 6 for span in spans):
+        findings.append(_finding(
+            "info", "grid",
+            "A log axis spans 6 or more decades. The minor grid stays on; turn it off only if it covers the data.",
+            measured=max(spans), expected=6))
+    if any(span >= 4 for span in spans) and metadata.get("size") in SIZES_MM and abs(height - SIZES_MM[metadata["size"]][1]) <= 0.05:
+        findings.append(_finding(
+            "info", "aspect",
+            "A log axis spans at least 4 decades on a 4:3 canvas. Set height_mm if that ratio cannot show the data.",
+            measured=max(spans), expected=4))
+    formats = list(metadata.get("formats") or [])
+    if journal == "jfm" and "jpeg" in formats:
+        findings.append(_finding(
+            "warn", "format",
+            "JFM asks for EPS or TIFF. This skill cannot write EPS. JPEG is not a JFM submission file; request TIFF instead.",
+            measured=formats, expected=["tiff"]))
+    dpi_by_format = metadata.get("dpi_by_format") or {}
+    if "tiff" in dpi_by_format:
+        required = submission_tiff_dpi(journal, bool(metadata.get("heatmap")))
+        used = int(dpi_by_format["tiff"])
+        if used < required:
+            findings.append(_finding(
+                "warn", "dpi",
+                f"TIFF is {used} dpi, below the {journal} snapshot of {required} dpi.",
+                measured=used, expected=required))
+    if metadata.get("multipanel"):
+        present = [text.get_text() for axes in figure.axes for text in axes.texts]
+        present.extend(text.get_text() for text in figure.texts)
+        missing = [letter for letter in metadata.get("panel_letters", []) if letter not in present]
+        if missing:
+            findings.append(_finding(
+                "warn", "panel",
+                f"Missing panel letters: {', '.join(missing)}.",
+                measured=present, expected=metadata.get("panel_letters")))
+        labeled = any(label for axes in figure.axes for label in axes.get_legend_handles_labels()[1])
+        if metadata.get("legend_mode") == "shared" and labeled:
+            count = len(figure.legends) + sum(axes.get_legend() is not None for axes in figure.axes)
+            if count != 1:
+                findings.append(_finding(
+                    "warn", "panel",
+                    "A shared multi-panel legend should be the only legend.",
+                    measured=count, expected=1))
+    figure.scientific_review = findings
+    return findings
+
+
+def _export_figure(figure, output, formats, dpi_by_format, metadata, write_metadata: bool) -> list[Path]:
+    if output is None:
+        return []
+    target = Path(output)
+    if target.suffix.lower() in {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".svg", ".pdf", ".eps"}:
+        target = target.with_suffix("")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    exported = []
+    for format_name in formats:
+        destination = target.with_suffix(EXPORT_SUFFIX[format_name])
+        save_kwargs = {"format": format_name, "dpi": dpi_by_format[format_name], "facecolor": "white"}
+        if format_name == "jpeg":
+            save_kwargs["pil_kwargs"] = {"quality": JPEG_QUALITY, "subsampling": 0}
+        figure.savefig(destination, **save_kwargs)
+        exported.append(destination)
+    if write_metadata:
+        target.with_name(target.stem + "_metadata.json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    return exported
+
+
+def _place_panel_letter(axes: mpl.axes.Axes, letter: str, fontsize: float) -> None:
+    text = axes.text(-0.04, 1.02, letter, transform=axes.transAxes, ha="right", va="bottom",
+                     fontsize=fontsize, fontweight="bold", clip_on=False, zorder=6)
+    text._scientific_panel_letter = True
+    axes.figure.canvas.draw()
+    box = text.get_window_extent(axes.figure.canvas.get_renderer())
+    figure = axes.figure
+    if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
+        text.set_position((0.04, 0.96))
+        text.set_ha("left")
+        text.set_va("top")
+
+
+def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size: float) -> None:
+    handles = []
+    labels = []
+    seen = {}
+    for axes in axes_list:
+        for handle, label in zip(*axes.get_legend_handles_labels()):
+            if not label or label.startswith("_"):
+                continue
+            identity = getattr(handle, "_scientific_identity", None)
+            if label in seen and seen[label] != identity:
+                raise ValueError(f"Series {label!r} has different styles in different panels.")
+            if label in seen:
+                continue
+            seen[label] = identity
+            handles.append(handle)
+            labels.append(label)
+        existing = axes.get_legend()
+        if existing is not None:
+            existing.remove()
+    if not handles:
+        return
+    legend = figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.995),
+                           ncol=min(len(handles), 4), frameon=True, framealpha=1, facecolor="white",
+                           edgecolor="#777777", fontsize=legend_size)
+    figure.canvas.draw()
+    box = legend.get_window_extent(figure.canvas.get_renderer())
+    pad = 6 * figure.dpi / 72
+    top = (box.y0 - pad) / figure.bbox.height
+    if top < 0.45:
+        legend.remove()
+        raise ValueError("Legend does not fit this preset; select a larger size or simplify labels.")
+    figure.subplots_adjust(top=min(figure.subplotpars.top, max(top, 0.5)))
+    figure.canvas.draw()
+    for source, target in zip(handles, legend.legend_handles):
+        _copy_identity(source, target)
+        if isinstance(source, PathCollection):
+            target.set_sizes(source.get_sizes()[:1])
+
+
 def render_plot(
     data: pd.DataFrame | dict | np.ndarray,
     *,
@@ -783,10 +1107,10 @@ def render_plot(
     ylabel: str | None = None,
     title: str | None = None,
     font: str = "Arial",
-    size: str = "single",
+    size: str | None = None,
     output: str | Path | None = None,
     formats: tuple[str, ...] | list[str] | None = None,
-    dpi: int = 300,
+    dpi: int | None = None,
     line_width: float | None = None,
     marker_size: float | None = None,
     xscale: str = "linear",
@@ -795,10 +1119,17 @@ def render_plot(
     error: dict | None = None,
     error_bars: dict | None = None,
     legend: str = "auto",
+    journal: str = "elsevier",
+    height_mm: float | None = None,
+    host_axes: mpl.axes.Axes | None = None,
+    host_error_axes: mpl.axes.Axes | None = None,
+    apply_layout: bool = True,
+    draw_legend: bool = True,
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
-    if kind not in KINDS or size not in SIZES_MM or group_kind not in ("auto", "ordered", "categorical"):
-        raise ValueError("Unknown plot kind, size or group kind.")
+    if kind not in KINDS or group_kind not in ("auto", "ordered", "categorical"):
+        raise ValueError("Unknown plot kind or group kind.")
+    size = resolve_size(size, journal)
     if xscale not in ("linear", "log") or yscale not in ("linear", "log"):
         raise ValueError("xscale and yscale must be linear or log.")
     if legend not in ("auto", "outside"):
@@ -807,15 +1138,16 @@ def render_plot(
         raise ValueError("Error panels require line, point-line, scatter or mixed.")
     if kind not in (*SERIES_KINDS, "mixed") and (xscale != "linear" or yscale != "linear" or series_styles is not None):
         raise ValueError("Axis scales and series_styles apply to line, point-line, scatter and mixed only.")
-    chosen_formats = tuple(dict.fromkeys(formats if formats is not None else ("png",)))
-    if not chosen_formats or any(format_name not in FORMATS for format_name in chosen_formats):
-        raise ValueError(f"Formats must be drawn from {FORMATS}.")
-    if not 72 <= dpi <= 1200:
-        raise ValueError("DPI must be between 72 and 1200.")
-    for label, override, allowed, maximum in (("line_width", line_width, ("point-line", "line", "mixed"), 8),
-                                             ("marker_size", marker_size, ("point-line", "scatter", "mixed"), 20)):
-        if override is not None and (kind not in allowed or not np.isfinite(override) or not 0 < override <= maximum):
-            raise ValueError(f"{label} must be a positive finite value up to {maximum} for {allowed}.")
+    chosen_formats = resolve_formats(formats)
+    dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, kind == "heatmap")
+    if line_width is not None and (kind not in ("point-line", "line", "mixed") or isinstance(line_width, bool)
+                                   or not np.isfinite(line_width)
+                                   or not LINE_WIDTH_MIN_PT <= float(line_width) <= LINE_WIDTH_MAX_PT):
+        raise ValueError(f"line_width must be between {LINE_WIDTH_MIN_PT:g} and {LINE_WIDTH_MAX_PT:g} pt "
+                         "for point-line, line and mixed.")
+    if marker_size is not None and (kind not in ("point-line", "scatter", "mixed") or isinstance(marker_size, bool)
+                                    or not np.isfinite(marker_size) or not 0 < float(marker_size) <= 20):
+        raise ValueError("marker_size must be a positive finite value up to 20 for point-line, scatter and mixed.")
     face = resolve_font(font)
     frame = _frame(data, kind)
     if kind in (*SERIES_KINDS, "mixed"):
@@ -835,14 +1167,28 @@ def render_plot(
                          "xtick.labelsize": text_sizes["tick"], "ytick.labelsize": text_sizes["tick"],
                          "svg.fonttype": "none", "pdf.fonttype": 42, "ps.fonttype": 42,
                          "savefig.facecolor": "white"}):
-        width_mm, height_mm = SIZES_MM[size]
-        figure, panels = plt.subplots(2 if error is not None else 1, sharex=error is not None,
-                                      figsize=(width_mm / 25.4, height_mm / 25.4), dpi=120,
-                                      gridspec_kw={"height_ratios": [2.4, 1]} if error is not None else None)
-        axes = panels[0] if error is not None else panels
-        error_axes = panels[1] if error is not None else None
-        figure.scientific_metadata = {
+        width_mm, _preset_height = SIZES_MM[size]
+        resolved_height = resolve_height(size, height_mm)
+        hosted = host_axes is not None
+        if hosted:
+            axes = host_axes
+            figure = axes.figure
+            error_axes = host_error_axes
+            if (error is not None) != (error_axes is not None):
+                raise ValueError("host_error_axes is required exactly when a panel draws a reference-error panel.")
+        else:
+            figure, panels = plt.subplots(2 if error is not None else 1, sharex=error is not None,
+                                          figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120,
+                                          gridspec_kw={"height_ratios": [2.4, 1]} if error is not None else None)
+            axes = panels[0] if error is not None else panels
+            error_axes = panels[1] if error is not None else None
+            figure.scientific_error_axes = error_axes
+        metadata = {
             "xscale": xscale, "yscale": yscale,
+            "size": size, "journal": journal,
+            "width_mm": width_mm, "height_mm": resolved_height,
+            "formats": list(chosen_formats), "dpi_by_format": dpi_by_format,
+            "heatmap": kind == "heatmap",
             "error": error_metadata if error is not None else None,
             "error_bars": None if error_bar_state is None else {
                 "definition": error_bar_state["definition"],
@@ -853,7 +1199,10 @@ def render_plot(
                 "series": [],
             },
         }
-        figure.scientific_error_axes = error_axes
+        if hosted:
+            axes._scientific_panel = metadata
+        else:
+            figure.scientific_metadata = metadata
         axes.set_xscale(xscale)
         axes.set_yscale(yscale)
         _style_axes(axes, kind)
@@ -973,14 +1322,16 @@ def render_plot(
         axes.set_ylabel(ylabel if ylabel is not None else (y or value or ""))
         if title:
             axes.set_title(title)
-        figure.tight_layout(pad=1.0)
-        if kind in (*SERIES_KINDS, "mixed"):
-            margins = figure.subplotpars
-            figure.subplots_adjust(left=max(0.135, margins.left), right=min(0.91, margins.right),
-                                   bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
+        if apply_layout:
+            figure.tight_layout(pad=1.0)
+            if kind in (*SERIES_KINDS, "mixed"):
+                margins = figure.subplotpars
+                figure.subplots_adjust(left=max(0.135, margins.left), right=min(0.91, margins.right),
+                                       bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
         figure.canvas.draw()
         _adapt_strokes(axes, kind, line_width, marker_size)
-        _place_legend(figure, axes, size, legend)
+        if draw_legend:
+            _place_legend(figure, axes, size, legend)
         figure.canvas.draw()
         for panel_axes in figure.axes:
             _adapt_log_ticks(panel_axes)
@@ -990,31 +1341,184 @@ def render_plot(
             _copy_identity(artists[label], artist)
         _sync_legend(axes)
         if error_bar_state is not None:
-            figure.scientific_metadata["error_bars"]["series"] = error_bar_records
+            metadata["error_bars"]["series"] = error_bar_records
         if artists:
-            figure.scientific_metadata["series"] = {
+            metadata["series"] = {
                 label: {"kind": styles[label]["kind"],
                         "line_width_pt": None if isinstance(artist, PathCollection) else artist.get_linewidth(),
                         "marker_size_pt": float(np.sqrt(artist.get_sizes()[0])) if isinstance(artist, PathCollection)
                         else artist.get_markersize() if styles[label]["kind"] == "point-line" else None}
                 for label, artist in artists.items()}
-        for panel_axes in figure.axes:
-            _hide_edge_grids(panel_axes)
-        _check_text_layout(figure)
+        for panel_axes in ((axes, error_axes) if hosted else figure.axes):
+            if panel_axes is not None:
+                _hide_edge_grids(panel_axes)
+        if apply_layout:
+            _check_text_layout(figure)
         exported = []
-        if output is not None:
-            target = Path(output)
-            if target.suffix.lower().lstrip(".") in FORMATS:
-                target = target.with_suffix("")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            for format_name in chosen_formats:
-                destination = target.with_suffix(f".{format_name}")
-                figure.savefig(destination, format=format_name, dpi=dpi, facecolor="white")
-                exported.append(destination)
-            if error is not None or error_bar_state is not None:
-                target.with_name(target.stem + "_metadata.json").write_text(
-                    json.dumps(figure.scientific_metadata, indent=2) + "\n", encoding="utf-8")
+        if not hosted:
+            figure.scientific_review = review_figure(figure, journal=journal)
+            exported = _export_figure(figure, output, chosen_formats, dpi_by_format, metadata,
+                                      error is not None or error_bar_state is not None)
         return figure, axes, exported
+
+
+def _copy_matching_artists(source_axes, target_axes) -> None:
+    sources = {}
+    for artist in (*source_axes.lines, *source_axes.collections):
+        label = artist.get_label()
+        if label and not str(label).startswith("_"):
+            sources[label] = artist
+    for artist in (*target_axes.lines, *target_axes.collections):
+        source = sources.get(artist.get_label())
+        if source is not None:
+            _copy_identity(source, artist)
+
+
+def _sync_figure_legend(figure: mpl.figure.Figure) -> None:
+    if not figure.legends:
+        return
+    legend = figure.legends[0]
+    sources = {}
+    for axes in figure.axes:
+        for artist in (*axes.lines, *axes.collections):
+            label = artist.get_label()
+            if label and not str(label).startswith("_") and label not in sources:
+                sources[label] = artist
+    for target, text in zip(legend.legend_handles, legend.get_texts()):
+        source = sources.get(text.get_text())
+        if source is None:
+            continue
+        _copy_identity(source, target)
+        if isinstance(source, PathCollection):
+            target.set_sizes(source.get_sizes()[:1])
+
+
+def render_multipanel(
+    panels: list[dict],
+    *,
+    ncols: int | None = None,
+    size: str | None = None,
+    journal: str = "elsevier",
+    height_mm: float | None = None,
+    sharex: bool = False,
+    sharey: bool = False,
+    legend: str = "shared",
+    output: str | Path | None = None,
+    formats: tuple[str, ...] | list[str] | None = None,
+    dpi: int | None = None,
+    font: str = "Arial",
+) -> tuple[mpl.figure.Figure, list, list[Path]]:
+    """Compose real panels on one journal-width canvas. Titles stay in the caption."""
+    if not panels:
+        raise ValueError("render_multipanel needs at least one panel.")
+    if legend not in ("shared", "each", "none"):
+        raise ValueError("Multipanel legend must be shared, each or none.")
+    if journal not in JOURNALS:
+        raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
+    if size is None:
+        size = {"elsevier": "double", "jfm": "single", "pof": "aip-double"}[journal]
+    size = resolve_size(size, journal)
+    width_mm = SIZES_MM[size][0]
+    count = len(panels)
+    if ncols is None:
+        ncols = 2 if width_mm >= 140 and 2 <= count <= 4 else 1
+    if isinstance(ncols, bool) or not isinstance(ncols, int) or not 1 <= ncols <= count:
+        raise ValueError("ncols must be an integer from 1 through the panel count.")
+    nrows = int(np.ceil(count / ncols))
+    if height_mm is None:
+        target_height = nrows * (width_mm / ncols) * 0.75 + PANEL_CHROME_MM
+        resolved_height = min(max(target_height, HEIGHT_MIN_MM), HEIGHT_MAX_MM)
+        height_clamped = target_height > HEIGHT_MAX_MM + 1e-6
+    else:
+        target_height = resolved_height = resolve_height(size, height_mm)
+        height_clamped = False
+    for panel in panels:
+        if not isinstance(panel, dict) or "data" not in panel or "kind" not in panel:
+            raise ValueError("Each panel needs data and kind.")
+        if panel.get("title"):
+            raise ValueError("Multi-panel figures do not draw an in-figure title; put it in the caption.")
+    chosen_formats = resolve_formats(formats)
+    heatmap = any(panel.get("kind") == "heatmap" for panel in panels)
+    dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, heatmap)
+    face = resolve_font(font)
+    text_sizes = TEXT_SIZES_PT[size]
+    letters = [f"({chr(ord('a') + index)})" for index in range(count)]
+    draw_keys = ("kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
+                 "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend")
+    with mpl.rc_context({"font.family": face, "font.size": text_sizes["tick"],
+                         "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
+                         "xtick.labelsize": text_sizes["tick"], "ytick.labelsize": text_sizes["tick"],
+                         "savefig.facecolor": "white"}):
+        figure = plt.figure(figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120)
+        figure.scientific_error_axes = None
+        figure.scientific_metadata = {
+            "multipanel": True, "size": size, "journal": journal,
+            "width_mm": width_mm, "height_mm": resolved_height,
+            "formats": list(chosen_formats), "dpi_by_format": dpi_by_format,
+            "heatmap": heatmap, "legend_mode": legend, "panel_letters": letters,
+            "height_clamped": height_clamped, "target_height_mm": target_height,
+            "xscale": None, "yscale": None, "error": None, "error_bars": None,
+        }
+        grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.38)
+        figure.subplots_adjust(left=0.16, right=0.97, bottom=0.16, top=0.90)
+        created = []
+        share_x_anchor = None
+        share_y_anchor = None
+        for index, panel in enumerate(panels):
+            row, column = divmod(index, ncols)
+            share_kwargs = {}
+            if sharex and share_x_anchor is not None:
+                share_kwargs["sharex"] = share_x_anchor
+            if sharey and share_y_anchor is not None:
+                share_kwargs["sharey"] = share_y_anchor
+            if panel.get("error") is not None:
+                sub = grid[row, column].subgridspec(2, 1, height_ratios=[2.4, 1], hspace=0.08)
+                axes = figure.add_subplot(sub[0], **share_kwargs)
+                error_axes = figure.add_subplot(sub[1], sharex=axes)
+            else:
+                axes = figure.add_subplot(grid[row, column], **share_kwargs)
+                error_axes = None
+            if share_x_anchor is None:
+                share_x_anchor = axes
+            if share_y_anchor is None:
+                share_y_anchor = axes
+            kwargs = {key: panel[key] for key in draw_keys if key in panel}
+            render_plot(panel["data"], journal=journal, size=size, font=font, host_axes=axes,
+                        host_error_axes=error_axes, apply_layout=False,
+                        draw_legend=legend == "each", **kwargs)
+            if sharex and row != nrows - 1:
+                axes.tick_params(labelbottom=False)
+                if error_axes is not None:
+                    error_axes.tick_params(labelbottom=False)
+                    error_axes.set_xlabel("")
+                else:
+                    axes.set_xlabel("")
+            if sharey and column != 0:
+                axes.tick_params(labelleft=False)
+                axes.set_ylabel("")
+            created.append((axes, error_axes, panel))
+        for index, (axes, _error_axes, _panel) in enumerate(created):
+            _place_panel_letter(axes, letters[index], text_sizes["title"])
+        if legend == "shared":
+            _place_shared_legend(figure, [item[0] for item in created], text_sizes["legend"])
+        elif legend == "none":
+            for axes in figure.axes:
+                existing = axes.get_legend()
+                if existing is not None:
+                    existing.remove()
+        figure.canvas.draw()
+        for axes, error_axes, panel in created:
+            _adapt_strokes(axes, panel["kind"], panel.get("line_width"), panel.get("marker_size"))
+            if error_axes is not None:
+                _copy_matching_artists(axes, error_axes)
+        for panel_axes in figure.axes:
+            _adapt_log_ticks(panel_axes)
+            _hide_edge_grids(panel_axes)
+        _sync_figure_legend(figure)
+        _check_text_layout(figure)
+        figure.scientific_review = review_figure(figure, journal=journal)
+        exported = _export_figure(figure, output, chosen_formats, dpi_by_format, figure.scientific_metadata, False)
+    return figure, [item[0] for item in created], exported
 
 
 def _source_script(target: Path, args: list[str]) -> None:
@@ -1067,9 +1571,11 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--ylabel")
     parser.add_argument("--title")
     parser.add_argument("--font", choices=tuple(FONTS), default="Arial")
-    parser.add_argument("--size", choices=tuple(SIZES_MM), default="single")
-    parser.add_argument("--format", action="append", dest="formats", choices=FORMATS)
-    parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument("--size", choices=(*SIZES_MM, "multipanel"), default=None)
+    parser.add_argument("--journal", choices=tuple(JOURNALS), default="elsevier")
+    parser.add_argument("--height-mm", type=float, dest="height_mm")
+    parser.add_argument("--format", action="append", dest="formats", choices=(*FORMATS, *REJECTED_FORMATS))
+    parser.add_argument("--dpi", type=int, default=None)
     parser.add_argument("--line-width", type=float, help="Line stroke width in points (line and point-line)")
     parser.add_argument("--marker-size", type=float, help="Marker diameter in points (point-line and scatter)")
     parser.add_argument("--xscale", choices=("linear", "log"), default="linear")
@@ -1095,6 +1601,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--output", type=Path, required=True, help="Output basename; suffix does not override --format")
     parser.add_argument("--no-script", action="store_true", help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
+    if options.size == "multipanel":
+        parser.error("size 'multipanel' was removed; use render_multipanel().")
     if bool(options.error_reference is not None) != bool(options.error_definition is not None):
         parser.error("--error-reference and --error-definition must be supplied together")
     error = ({"reference": options.error_reference, "definition": options.error_definition,
@@ -1123,6 +1631,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         line_width=options.line_width, marker_size=options.marker_size,
         xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
         error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
+        journal=options.journal, height_mm=options.height_mm,
     )
     plt.close(figure)
     if not options.no_script:

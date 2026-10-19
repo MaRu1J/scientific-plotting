@@ -182,8 +182,8 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
         ("Log law", log_y, np.log(log_y) / kappa + intercept),
     ])
     inner_styles = dict(reynolds_styles)
-    inner_styles["u+ = y+"] = {"color": "#3A3F46", "linestyle": (0, (5, 2)), "line_width": 1.6}
-    inner_styles["Log law"] = {"color": "#5C4E9A", "linestyle": (0, (7, 1.8)), "line_width": 1.6}
+    inner_styles["u+ = y+"] = {"color": "#3A3F46", "linestyle": (0, (5, 2)), "line_width": 1.5}
+    inner_styles["Log law"] = {"color": "#5C4E9A", "linestyle": (0, (7, 1.8)), "line_width": 1.5}
     add({
         "id": "A02_line_dns_inner", "kind": "line", "frame": stack(inner_parts),
         "group_kind": "categorical", "series_styles": inner_styles,
@@ -205,7 +205,7 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
     add({
         "id": "A03_line_pipe", "kind": "line", "frame": pipe, "group_kind": "categorical",
         "series_styles": {
-            "Exact": {"color": "#0A5270", "linestyle": "-", "line_width": 1.8},
+            "Exact": {"color": "#0A5270", "linestyle": "-", "line_width": 1.5},
             "Fine CFD (synth.)": {"color": "#D35400", "linestyle": "--", "line_width": 1.5},
             "Coarse CFD (synth.)": {"color": "#2F6DB5", "linestyle": "-.", "line_width": 1.5},
         },
@@ -228,7 +228,7 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
     add({
         "id": "A04_line_blasius", "kind": "line", "frame": boundary, "group_kind": "categorical",
         "series_styles": {
-            "Blasius": {"color": "#0A5270", "linestyle": "-", "line_width": 1.8},
+            "Blasius": {"color": "#0A5270", "linestyle": "-", "line_width": 1.5},
             "CFD (synth.)": {"color": "#D35400", "linestyle": "--", "line_width": 1.5},
         },
         "xscale": "linear", "yscale": "linear", "size": "double",
@@ -426,7 +426,7 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
     add({
         "id": "M02_mixed_pipe", "kind": "mixed", "frame": mixed_pipe, "group_kind": "categorical",
         "series_styles": {
-            "Exact": {"kind": "line", "color": "#0A5270", "linestyle": "-", "line_width": 1.8},
+            "Exact": {"kind": "line", "color": "#0A5270", "linestyle": "-", "line_width": 1.5},
             "CFD (synth.)": {"kind": "point-line", "color": "#D35400", "linestyle": "--", "marker": "s"},
             "Samples (synth.)": {"kind": "scatter", "color": "#2F6DB5", "marker": "^", "marker_size": 5.5},
         },
@@ -449,7 +449,7 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
     add({
         "id": "M03_mixed_blasius", "kind": "mixed", "frame": mixed_boundary, "group_kind": "categorical",
         "series_styles": {
-            "Blasius": {"kind": "line", "color": "#0A5270", "linestyle": "-", "line_width": 1.8},
+            "Blasius": {"kind": "line", "color": "#0A5270", "linestyle": "-", "line_width": 1.5},
             "CFD (synth.)": {"kind": "line", "color": "#D35400", "linestyle": "--", "line_width": 1.5},
             "Samples (synth.)": {"kind": "scatter", "color": "#AA3377", "marker": "D", "marker_size": 5.2},
         },
@@ -574,7 +574,7 @@ def render_catalog(template, catalog: list[dict]) -> list[dict]:
         kwargs = {
             "kind": case["kind"], "x": "x", "y": "y", "size": case["size"],
             "xlabel": case["xlabel"], "ylabel": case["ylabel"],
-            "output": OUTPUT_DIR / case["id"], "formats": ("png",), "dpi": 300,
+            "output": OUTPUT_DIR / case["id"], "formats": ("jpeg",), "dpi": 300,
             "xscale": case["xscale"], "yscale": case["yscale"],
         }
         if case["kind"] == "heatmap":
@@ -609,11 +609,11 @@ def render_catalog(template, catalog: list[dict]) -> list[dict]:
             if kinds != expected:
                 raise RuntimeError(f"{case['id']} mixed kinds changed: {kinds}")
         audit = {
-            "id": case["id"], "kind": case["kind"], "png": str(paths[0]),
+            "id": case["id"], "kind": case["kind"], "image": str(paths[0]),
             "rows": int(len(frame)), "warnings": warning_text,
             "source": case["source"], "meaning": case["meaning"], "parameters": case["parameters"],
             "xlabel": case["xlabel"], "ylabel": case["ylabel"], "title": case["title"],
-            "xscale": case["xscale"], "yscale": case["yscale"], "size_mm": [183, 136],
+            "xscale": case["xscale"], "yscale": case["yscale"], "size_mm": [190, 142.5],
             "metadata_series": figure.scientific_metadata.get("series"),
             "markers": [marker_name(line) for line in plotted],
             "line_widths_pt": [float(line.get_linewidth()) for line in plotted],
@@ -642,7 +642,7 @@ def write_report(cases: dict[int, dict], second: dict, audits: list[dict], font_
     lines = [
         "# CFD 折线与点线测试",
         "",
-        f"字体：请求 Arial，实际使用 {font_name}。画布均为双栏 183 × 136 mm，300 dpi，只导出 PNG。",
+        f"字体：请求 Arial，实际使用 {font_name}。画布均为双栏 190 × 142.5 mm，300 dpi，只导出 JPEG。",
         "真实数据只来自 Kawamura Lab 充分发展通道流数据库的本地缓存；原始文件保留实验室的权利声明和引用要求。",
         "解析解、残差、圆柱力和带 synth. 的测点都是为测试图类型构造的，不能当作求解器或实验验证。",
         "误差棒是可选项。只有 D01 使用，数值是合成重复测量的样本标准差，不是 DNS 或实验不确定度。",
@@ -660,7 +660,7 @@ def write_report(cases: dict[int, dict], second: dict, audits: list[dict], font_
         lines.extend([
             f"### {audit['id']}（{audit['kind']}）",
             "",
-            f"![{audit['id']}]({audit['id']}.png)",
+            f"![{audit['id']}]({audit['id']}.jpg)",
             "",
             f"- 建议图注：{audit['title']}。",
             f"- 数据来源：{audit['source']}",

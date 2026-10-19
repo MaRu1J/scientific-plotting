@@ -1,6 +1,6 @@
 # Scientific Plotting Skill
 
-科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标、参考误差子图和可选误差棒。
+科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 JPEG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标、参考误差子图和可选误差棒。
 
 ## 仓库
 
@@ -30,9 +30,9 @@ python3 -m venv .venv
   --size double --output /path/to/figures/profile
 ```
 
-输出 `profile.png`、`profile_template.py`（当次所用母板的副本）、`profile_reproduce.py`（重跑命令的脚本）。输入数据仍位于原位置；移动项目或换电脑后，在复现脚本里修改输入路径并安装依赖。不要把个人数据与绘图脚本不经检查地公开发布。脚本支持 `--help` 查看全部参数。
+输出 `profile.jpg`、`profile_template.py`（当次所用母板的副本）、`profile_reproduce.py`（重跑命令的脚本）。输入数据仍位于原位置；移动项目或换电脑后，在复现脚本里修改输入路径并安装依赖。不要把个人数据与绘图脚本不经检查地公开发布。脚本支持 `--help` 查看全部参数。
 
-需要其他格式时显式多次指定 `--format`，例如 `--format svg --format pdf --format tiff --format eps`；如果还需要 PNG，额外加 `--format png`。`--format` 未指定时只有 PNG。常见用途：PNG 快速分享/汇报；SVG 可编辑矢量；PDF 排版；TIFF/EPS 按投稿要求启用。导出的 TIFF/PNG 默认为 300 dpi，`--dpi 600` 可提升；SVG/PDF/EPS 不依赖 dpi 定义矢量清晰度。EPS 不使用透明填充。
+未指定 `--format` 时只写一个 JPEG（`.jpg`，300 dpi，质量 95，无色度抽样）。需要 TIFF 时显式写 `--format tiff`。PNG、SVG、PDF 和 EPS 会直接拒绝。指定期刊后，省略 dpi 的 TIFF 使用该期刊快照的分辨率：Elsevier 线稿 1000 dpi、含热图 500 dpi；JFM 线稿 1200 dpi、含热图 600 dpi；PoF 600 dpi。手动 `--dpi` 始终照做，偏低时只在审查里警告。
 
 Excel 示例：`--input results.xlsx --sheet 0`。矩阵热力图（首列是行标签）使用 `--kind heatmap --index-col sample`；长表热力图指定 `--x condition --y sample --value intensity`。数值型/时间型 `--group` 默认视为连续有序系列，非数值标签如 `t=0.2s` 可指定 `--group-kind ordered`；不同方法使用 `--group-kind categorical`。柱状图的 `--x` 是类别、`--y` 是预先计算的数值；小提琴图的 `--x` 是组名、`--y` 是逐条观测值。
 
@@ -52,7 +52,7 @@ observations = {"distance": np.array([0.02, 0.00, 0.01]),
 figure, axes, paths = render_plot(
     observations, kind="point-line", x="distance", y="temperature",
     xlabel="Distance (m)", ylabel="Temperature (K)",
-    output="figures/temperature", formats=["png"]
+    output="figures/temperature"
 )
 plt.close(figure)
 ```
@@ -87,7 +87,7 @@ plt.close(figure)
 
 ```json
 {
-  "Theory": {"kind": "line", "linestyle": "-", "color": "#126b80", "line_width": 1.8},
+  "Theory": {"kind": "line", "linestyle": "-", "color": "#126b80", "line_width": 1.5},
   "CFD": {"kind": "point-line", "linestyle": "--", "marker": "s", "marker_size": 4},
   "Samples": {"kind": "scatter", "marker": "^", "marker_size": 5.5}
 }
@@ -148,9 +148,9 @@ figure, axes, paths = render_plot(
 
 ## 风格和贡献
 
-默认 Arial（缺失时会警告并改用 Liberation Sans），可选 `--font 'Times New Roman'`（缺失时警告并改用 Liberation Serif）。单幅图依参考图采用约 4:3 的画布：`single` 为 89 × 66 mm，`double` 为 183 × 136 mm；点线图等会留出更接近参考图的坐标框四周空间，而不是把坐标框撑满画布。有序时间组仍从琥珀黄走到深蓝绿，但各档更深、明度拉开，避免亮黄和相邻色糊在一起；组数不是 5 时在 Oklab 中插值。不同方法使用另一组区分度更高的分类色（蓝、橙、绿、品红，以及橄榄、红、靛蓝、灰）。线型和点形继续负责黑白辨识。点线图按同一系列相邻点的成图间距调整粗细（不会因其他系列靠近就缩小标记）：稀疏约 6.2 pt、普通约 5.0 pt、较密约 3.8 pt、极密约 2.6 pt，标记为实心，直径不小于 3.6 pt 时加白边。默认点形是圆、方、上三角、菱形、下三角、五边形。散点图独立使用约 6.2 / 5.0 pt 的实心点；密集点使用有限的透明度而不删除数据。如自动尺寸不合适，可分别指定 `--line-width 1.8`（线宽，pt）和 `--marker-size 5`（标记直径，pt；散点面积为直径平方）；Python API 用 `line_width` 和 `marker_size`。四边坐标轴、朝内刻度、主实次虚网格及图例规则见 [风格约定](scientific-plotting/references/style.md)。需要根据新机器安装依赖或替代字体可以直接做；若要改变其他风格，先明确提出要求并检查结果，不要因为缺字体或图例密集就偷偷更改规则。
+默认 Arial（缺失时会警告并改用 Liberation Sans），可选 `--font 'Times New Roman'`（缺失时警告并改用 Liberation Serif）。单幅图默认接近 4:3：Elsevier 的 `single` 为 90 × 67.5 mm，`medium` 为 140 × 105 mm，`double` 为 190 × 142.5 mm；投 Physics of Fluids 时用 `aip-single` 85 × 63.75 mm 或 `aip-double` 170 × 127.5 mm。点线图等会留出更接近参考图的坐标框四周空间，而不是把坐标框撑满画布。有序时间组仍从琥珀黄走到深蓝绿，但各档更深、明度拉开，避免亮黄和相邻色糊在一起；组数不是 5 时在 Oklab 中插值。不同方法使用另一组区分度更高的分类色（蓝、橙、绿、品红，以及橄榄、红、靛蓝、灰）。线型和点形继续负责黑白辨识。点线图按同一系列相邻点的成图间距调整粗细（不会因其他系列靠近就缩小标记）：稀疏约 6.2 pt、普通约 5.0 pt、较密约 3.8 pt、极密约 2.6 pt，标记为实心，直径不小于 3.6 pt 时加白边。默认点形是圆、方、上三角、菱形、下三角、五边形。散点图独立使用约 6.2 / 5.0 pt 的实心点；密集点使用有限的透明度而不删除数据。如自动尺寸不合适，可分别指定 `--line-width 1.2`（线宽，pt）和 `--marker-size 5`（标记直径，pt；散点面积为直径平方）；Python API 用 `line_width` 和 `marker_size`。四边坐标轴、朝内刻度、主实次虚网格及图例规则见 [风格约定](scientific-plotting/references/style.md)。需要根据新机器安装依赖或替代字体可以直接做；若要改变其他风格，先明确提出要求并检查结果，不要因为缺字体或图例密集就偷偷更改规则。
 
-字号以**实际排版宽度**为准：单栏图（89 mm）坐标名称 10 pt、刻度及图例 8.5 pt；双栏图和多面板档（183 mm）坐标名称 11 pt、刻度及图例 9.5 pt。插入论文时不要把双栏图缩成单栏图，否则文字也会等比变小；应直接选择 `--size single` 重绘。具体期刊的图稿要求如有不同，请按其要求明确调整。
+字号以**实际排版宽度**为准：90 mm 和 85 mm 用坐标名称 10 pt、刻度及图例 8.5 pt；140、170 和 190 mm 用坐标名称 11 pt、刻度及图例 9.5 pt。多面板用 `render_multipanel`，不再使用已经删除的 `multipanel` 尺寸。期刊差异见 [期刊快照](scientific-plotting/references/journals.md)，审查只列差异，不表示已经符合要求。
 
 高星绘图仓库和早期参考的借鉴边界见 [参考记录](scientific-plotting/references/sources.md)。这里没有拷贝其代码、色表或图像。
 

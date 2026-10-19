@@ -54,7 +54,7 @@ def test_error_bars_are_off_unless_requested(tmp_path):
     figure, axes, paths = render_plot(frame, kind="point-line", x="x", y="y", output=tmp_path / "plain")
     assert figure.scientific_metadata["error_bars"] is None
     assert not any(getattr(artist, "_scientific_errorbar", False) for artist in (*axes.lines, *axes.collections))
-    assert paths == [tmp_path / "plain.png"]
+    assert paths == [tmp_path / "plain.jpg"]
     assert not (tmp_path / "plain_metadata.json").exists()
     plt.close(figure)
 
@@ -235,7 +235,7 @@ def test_cli_error_bars_record_definition_and_reject_a_missing_one(tmp_path):
     assert metadata["error_bars"]["definition"] == "sample standard deviation, n=4"
     assert metadata["error_bars"]["y"] == {"mode": "symmetric", "source": "sd"}
     assert metadata["error"] is None
-    assert target.with_suffix(".png").stat().st_size > 1000
+    assert target.with_suffix(".jpg").stat().st_size > 1000
     missing = subprocess.run([sys.executable, str(TEMPLATE), "--input", str(source), "--kind", "point-line",
                               "--x", "radius", "--y", "velocity", "--yerr", "sd",
                               "--output", str(tmp_path / "missing")], capture_output=True, text=True)
