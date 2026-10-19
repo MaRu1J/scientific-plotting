@@ -285,9 +285,9 @@ def render_plot(
         raise ValueError(f"Formats must be drawn from {FORMATS}.")
     if not 72 <= dpi <= 1200:
         raise ValueError("DPI must be between 72 and 1200.")
-    for label, value, allowed, maximum in (("line_width", line_width, ("point-line", "line"), 8),
-                                           ("marker_size", marker_size, ("point-line", "scatter"), 20)):
-        if value is not None and (kind not in allowed or not np.isfinite(value) or not 0 < value <= maximum):
+    for label, override, allowed, maximum in (("line_width", line_width, ("point-line", "line"), 8),
+                                             ("marker_size", marker_size, ("point-line", "scatter"), 20)):
+        if override is not None and (kind not in allowed or not np.isfinite(override) or not 0 < override <= maximum):
             raise ValueError(f"{label} must be a positive finite value up to {maximum} for {allowed}.")
     face = resolve_font(font)
     frame = _frame(data, kind)

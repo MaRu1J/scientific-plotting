@@ -1,0 +1,2 @@
+data/cfd_validation/raw/* -text -whitespace
+figures/cfd_validation/raw/* -text -whitespace

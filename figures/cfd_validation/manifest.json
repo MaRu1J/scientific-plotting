@@ -1,0 +1,875 @@
+{
+  "created_at": "2026-10-19T06:30:54.385823+00:00",
+  "seed": 20261019,
+  "source_page": "https://www.rs.tus.ac.jp/~t2lab/db/poi/poi.html",
+  "template_sha256": "e3f20b727fd27ef66e0e6d9ecb5d03290b19f2fc8baa17e390a3ef8d505bb161",
+  "environment": {
+    "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+    "numpy": "2.5.4",
+    "pandas": "3.0.6",
+    "matplotlib": "3.11.2",
+    "pillow": "13.0.0"
+  },
+  "sources": [
+    {
+      "file": "Poi180_4th_E.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi180_4th_E.dat",
+      "Re_tau": 180.0,
+      "Re_bulk": 5665.0,
+      "rows": 240,
+      "shear_rows": 240,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "8bbf90c850d7dc525e83f3d7b346707d45ce8f5fad889976e720b2ddfcdcb36c"
+    },
+    {
+      "file": "Poi395_4th_D.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi395_4th_D.dat",
+      "Re_tau": 395.0,
+      "Re_bulk": 14124.0,
+      "rows": 240,
+      "shear_rows": 240,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "b89a0cede344a0e4f5fa6d33d923939af08f1d1d4b0336a11c24891d10c414d1"
+    },
+    {
+      "file": "Poi640_4th_B.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi640_4th_B.dat",
+      "Re_tau": 640.0,
+      "Re_bulk": 24428.0,
+      "rows": 128,
+      "shear_rows": 127,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "a5e045ce4952dd26c15cc924e39365af98f6ec5a5f0f5b55ea636f02d87c029f"
+    },
+    {
+      "file": "Poi1020_4th_A_ver2.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi1020_4th_A_ver2.dat",
+      "Re_tau": 1020.0,
+      "Re_bulk": 41441.0,
+      "rows": 224,
+      "shear_rows": 224,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "a5b8251fdc8d5bc53b955ecfb79428bda72898cd33ebd030971d7f3f6a4fef04"
+    },
+    {
+      "file": "Poi180_2nd_A.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi180_2nd_A.dat",
+      "Re_tau": 180.0,
+      "Re_bulk": 5692.0,
+      "rows": 33,
+      "shear_rows": 33,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "82f1b30ac351394b054d12a1c89f24c809cbdcae75d2d5c5fa9ff817436c217c"
+    }
+  ],
+  "scientific_checks": {
+    "blasius_wall_curvature": 0.3320573372047874,
+    "blasius_farfield_velocity": 1.000000000000326,
+    "pipe_wall_velocity": 0.0,
+    "pipe_center_velocity": 2.0,
+    "synthetic_pipe_rmse": [
+      0.00794834462766012,
+      0.0019870861569150156
+    ]
+  },
+  "cases": [
+    {
+      "id": "A01_line_residual",
+      "kind": "line",
+      "title": "Residual convergence [synthetic]",
+      "xlabel": "Iteration",
+      "ylabel": "Normalized residual (-)",
+      "source": "人为构造的残差序列，不是求解器输出。",
+      "meaning": "连续性和两个动量方程的归一化残差，测试跨数量级收敛。",
+      "parameters": "迭代 0–2000，步长 1；R=A*10^(-n/tau)*(1+a*sin(n/b))；纵轴 log。",
+      "group_kind": "categorical",
+      "scale": "logy",
+      "csv": "data/A01_line_residual.csv",
+      "overlay_csv": null,
+      "rows": 6003,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "log",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "A02_line_dns_inner",
+      "kind": "line",
+      "title": "Channel DNS: inner scaling",
+      "xlabel": "Wall distance, y+",
+      "ylabel": "Mean velocity, u+",
+      "source": "Kawamura Lab：Poi180_4th_E.dat, Poi395_4th_D.dat, Poi640_4th_B.dat, Poi1020_4th_A_ver2.dat",
+      "meaning": "充分发展湍流平面通道流的半通道均值速度内尺度剖面。",
+      "parameters": "Re_tau=180/395/640/1020；原始全部测点；横轴 log，y+>0，无补壁面点。",
+      "group_kind": "ordered",
+      "scale": "logx",
+      "csv": "data/A02_line_dns_inner.csv",
+      "overlay_csv": null,
+      "rows": 832,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 4,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "log",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "A03_line_pipe",
+      "kind": "line",
+      "title": "Pipe profile: theory vs synthetic CFD",
+      "xlabel": "Radius, r/R",
+      "ylabel": "Axial velocity, u/Ub",
+      "source": "Hagen–Poiseuille 解析解 + 明确构造的两组数值示意结果。",
+      "meaning": "不可压缩、充分发展层流圆管轴向速度；不是湍流平面通道的解析解。",
+      "parameters": "Re_D=1000；u/Ub=2[1-(r/R)^2]；偏差乘子 1+0.025(r/R)^2 和 1+0.00625(r/R)^2。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/A03_line_pipe.csv",
+      "overlay_csv": null,
+      "rows": 603,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "A04_line_blasius",
+      "kind": "line",
+      "title": "Blasius profile vs synthetic CFD",
+      "xlabel": "Similarity coordinate, eta",
+      "ylabel": "Velocity, u/U_inf",
+      "source": "Blasius 相似性方程数值求解的理论参考曲线 + 合成数值偏差。",
+      "meaning": "零压梯度层流平板边界层；Blasius 没有在此被冒称为闭式解析公式。",
+      "parameters": "f'''+0.5*f*f''=0；f(0)=f'(0)=0，f'(10)=1；RK4+二分打靶，deta=0.01；f''(0)=0.3320573372。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/A04_line_blasius.csv",
+      "overlay_csv": null,
+      "rows": 3003,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "A05_line_dns_stresses",
+      "kind": "line",
+      "title": "Channel DNS: Reynolds stresses",
+      "xlabel": "Wall distance, y/h",
+      "ylabel": "Reynolds stress / u_tau^2",
+      "source": "Kawamura Lab：Poi395_4th_D.dat 的均值表与剪切应力表。",
+      "meaning": "三个法向雷诺应力及负雷诺剪切应力；不是速度 RMS。",
+      "parameters": "Re_tau=395；均值/uu/ww 与 vv/-uv 是交错网格，分别保留各表原始 y+；y/h=y+/Re_tau；不插值合并。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/A05_line_dns_stresses.csv",
+      "overlay_csv": null,
+      "rows": 960,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 4,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B01_pointline_lift",
+      "kind": "point-line",
+      "title": "Cylinder lift history [synthetic]",
+      "xlabel": "Dimensionless time, tU/D",
+      "ylabel": "Lift coefficient, Cl",
+      "source": "合成圆柱涡脱落式时间信号；包括合成参考和合成测量点，无真实实验。",
+      "meaning": "启动后趋于周期振荡的升力时间历程。所有组均同时画点和连线。",
+      "parameters": "示意 Re_D=100；St=0.165；tU/D=0–40，dt=0.5；噪声标准差 0.007；seed=20261019。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B01_pointline_lift.csv",
+      "overlay_csv": null,
+      "rows": 243,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [
+          5.0,
+          5.0,
+          5.0
+        ],
+        "line_widths_pt": [
+          1.8,
+          1.8,
+          1.8
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B02_pointline_dns_schemes",
+      "kind": "point-line",
+      "title": "Channel DNS: two datasets",
+      "xlabel": "Wall distance, y/h",
+      "ylabel": "Mean velocity, u/Ub",
+      "source": "Kawamura Lab：Poi180_2nd_A.dat、Poi180_4th_E.dat，均为真实 DNS。",
+      "meaning": "不同分辨率及离散方法数据的空间剖面对比；不能据此单独归因于离散阶数。",
+      "parameters": "Re_tau=180；Re_bulk=5692/5665；Ub+=Re_bulk/(2*Re_tau)；保留两套原网格，不插值对齐。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B02_pointline_dns_schemes.csv",
+      "overlay_csv": null,
+      "rows": 273,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 2,
+        "marker_sizes_pt": [
+          3.5,
+          3.5
+        ],
+        "line_widths_pt": [
+          1.45,
+          1.45
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B03_pointline_dns_reynolds",
+      "kind": "point-line",
+      "title": "Channel DNS: Reynolds-number comparison",
+      "xlabel": "Wall distance, y/h",
+      "ylabel": "Mean velocity, u/Ub",
+      "source": "Kawamura Lab：四组原始 DNS 均值剖面。",
+      "meaning": "不同摩擦雷诺数下的外尺度均值速度，检验有序配色和密集非均匀网格标记。",
+      "parameters": "Re_tau=180/395/640/1020；y/h=y+/Re_tau；u/Ub=u+/(Re_bulk/(2*Re_tau))；全部原始点。",
+      "group_kind": "ordered",
+      "scale": "linear",
+      "csv": "data/B03_pointline_dns_reynolds.csv",
+      "overlay_csv": null,
+      "rows": 832,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 4,
+        "marker_sizes_pt": [
+          2.4,
+          2.4,
+          2.4,
+          2.4
+        ],
+        "line_widths_pt": [
+          1.2,
+          1.2,
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B04_pointline_pipe",
+      "kind": "point-line",
+      "title": "Pipe comparison: all series connected",
+      "xlabel": "Radius, r/R",
+      "ylabel": "Axial velocity, u/Ub",
+      "source": "Hagen–Poiseuille 解析解 + 合成 CFD 和合成测量点。",
+      "meaning": "同图对比理论、数值示意和测量示意；按 point-line 定义，三组都显示点和连线。",
+      "parameters": "Re_D=1000；21 个 r/R 位置；u/Ub=2[1-(r/R)^2]；噪声为 0.012*(1-r^2)；固定种子。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B04_pointline_pipe.csv",
+      "overlay_csv": null,
+      "rows": 63,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [
+          5.0,
+          5.0,
+          5.0
+        ],
+        "line_widths_pt": [
+          1.8,
+          1.8,
+          1.8
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B05_pointline_blasius",
+      "kind": "point-line",
+      "title": "Boundary-layer comparison: connected points",
+      "xlabel": "Similarity coordinate, eta",
+      "ylabel": "Velocity, u/U_inf",
+      "source": "A04 的 Blasius 理论解显式线性插值到 25 个位置 + 合成 CFD 和合成测量点。",
+      "meaning": "边界层速度剖面的三组点线比较；插值仅用于构造理论采样，不修改 DNS。",
+      "parameters": "eta=0–8，共 25 点；数值偏差 -0.025*eta*exp(-eta/1.5)；合成测量噪声标准差上限 0.005。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B05_pointline_blasius.csv",
+      "overlay_csv": null,
+      "rows": 75,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 3,
+        "marker_sizes_pt": [
+          5.0,
+          5.0,
+          5.0
+        ],
+        "line_widths_pt": [
+          1.8,
+          1.8,
+          1.8
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B06_mixed_pipe",
+      "kind": "mixed",
+      "title": "Pipe: curves plus sample-only markers",
+      "xlabel": "Radius, r/R",
+      "ylabel": "Axial velocity, u/Ub",
+      "source": "同 A03/B04；测量点仍为合成数据。",
+      "meaning": "理论线 + 数值线 + 不连线的合成测量点。",
+      "parameters": "Python API 返回 Axes 后叠加 scatter；不是原生 point-line 模式；复用母板配色、图例和布局检查。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B06_mixed_pipe.csv",
+      "overlay_csv": "data/B06_mixed_pipe_overlay.csv",
+      "rows": 402,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "scatter offsets exact; no added connections",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 2,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "B07_mixed_blasius",
+      "kind": "mixed",
+      "title": "Boundary layer: curves plus sample markers",
+      "xlabel": "Similarity coordinate, eta",
+      "ylabel": "Velocity, u/U_inf",
+      "source": "同 A04/B05；测量点仍为合成数据。",
+      "meaning": "Blasius 理论线 + 数值线 + 不连线的合成测量点。",
+      "parameters": "Python API 返回 Axes 后叠加 scatter；不是原生 point-line 模式；复用母板配色、图例和布局检查。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/B07_mixed_blasius.csv",
+      "overlay_csv": "data/B07_mixed_blasius_overlay.csv",
+      "rows": 2002,
+      "audit": {
+        "checks": [
+          "all source points retained",
+          "within-series row order preserved",
+          "line/marker semantics correct",
+          "scatter offsets exact; no added connections",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 2,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [
+          1.2,
+          1.2
+        ],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "C01_scatter",
+      "kind": "scatter",
+      "title": "Velocity sample pairs [synthetic]",
+      "xlabel": "Exact velocity, u/Ub",
+      "ylabel": "Sample velocity, u/Ub",
+      "source": "B04 的理论值与合成观测值逐点配对。",
+      "meaning": "最简单的一组散点，无连接线。",
+      "parameters": "21 对数据，无拟合、无回归线。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/C01_scatter.csv",
+      "overlay_csv": null,
+      "rows": 21,
+      "audit": {
+        "checks": [
+          "scatter offsets exact; no added connections",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 0,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "C02_bar",
+      "kind": "bar",
+      "title": "Synthetic pipe-profile error",
+      "xlabel": "Illustrative grid",
+      "ylabel": "RMSE of u/Ub (-)",
+      "source": "显式从 A03 的合成剖面计算 RMSE；并非真实网格收敛研究。",
+      "meaning": "两个预先计算的误差数值。",
+      "parameters": "RMSE=sqrt(mean((u_synth-u_exact)^2))；201 个 r/R 等距采样点。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/C02_bar.csv",
+      "overlay_csv": null,
+      "rows": 2,
+      "audit": {
+        "checks": [
+          "precomputed bar heights preserved",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 0,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "C03_heatmap",
+      "kind": "heatmap",
+      "title": "Fully developed pipe field [analytic]",
+      "xlabel": "Axial coordinate, x/D",
+      "ylabel": "Radius, r/R",
+      "source": "Hagen–Poiseuille 解析速度场，规则网格显式求值。",
+      "meaning": "充分发展时速度沿轴向不变、沿径向抛物分布。",
+      "parameters": "6x6 网格；value=u/Ub=2[1-(r/R)^2]；cividis；原生 imshow 将首行放在图像上方。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/C03_heatmap.csv",
+      "overlay_csv": null,
+      "rows": 36,
+      "audit": {
+        "checks": [
+          "heatmap cells preserved",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 0,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    },
+    {
+      "id": "C04_violin",
+      "kind": "violin",
+      "title": "Velocity-error distributions [synthetic]",
+      "xlabel": "Illustrative grid",
+      "ylabel": "Signed error in u/Ub (-)",
+      "source": "独立构造的高斯误差样本，不是从 DNS 计算的误差，也不是 A03 的误差分布。",
+      "meaning": "两组原始样本的核密度形状。",
+      "parameters": "每组 80 点；均值 0，标准差 0.018/0.006；固定种子；小提琴轮廓是模板内置 KDE。",
+      "group_kind": "categorical",
+      "scale": "linear",
+      "csv": "data/C04_violin.csv",
+      "overlay_csv": null,
+      "rows": 160,
+      "audit": {
+        "checks": [
+          "two violin bodies plus extrema artists",
+          "four inward-ticked sides",
+          "labels/legend inside canvas",
+          "no sampled data covered by legend",
+          "183 x 136 mm; double-column font sizes"
+        ],
+        "legend_sample_hits": 0,
+        "line_count": 0,
+        "marker_sizes_pt": [],
+        "line_widths_pt": [],
+        "font": [
+          "Liberation Sans"
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "png_pixels": [
+          2161,
+          1606
+        ],
+        "png_dpi": [
+          299.9994,
+          299.9994
+        ],
+        "warnings": [
+          "Arial not installed; using Liberation Sans. Check the final text layout."
+        ]
+      }
+    }
+  ]
+}

@@ -45,6 +45,18 @@ plt.close(figure)
 
 此例的点按 `0.02 → 0.00 → 0.01` 连线，不做排序。Python API 接受 pandas DataFrame、等长列数组字典；二维 NumPy 数组也可直接作为热力图矩阵。未指定 `output` 时只返回画布而不写文件；CLI 才额外生成复现脚本。
 
+## CFD 系统测试
+
+`examples/test_cfd_plotting.py` 使用 Kawamura Lab 的真实通道流 DNS 文本数据，以及明确标注的解析/理论参考与合成示意数据，优先验证 5 个 `line` 和 5 个 `point-line` 场景，再生成 2 个纯线+散点混合补充图，最后简单验证另外四种图形。DNS 文件缓存于 `data/cfd_validation/raw/`，保留原作者的署名和引用要求；不同物理量的交错网格分别保留，不按相同序号误合并。合成曲线不能用于声明 CFD 模型或求解器获得物理验证。
+
+```bash
+.venv/bin/python examples/test_cfd_plotting.py
+.venv/bin/python -m pytest -q
+.venv/bin/python figures/cfd_validation/reproduce.py
+```
+
+输出目录 `figures/cfd_validation/` 包含 PNG、逐图输入 CSV、数据源/校验和/审计记录 `manifest.json`、中文报告 `REPORT.md`、可浏览画廊 `index.html`，以及离线复现所需的脚本与母板副本。对数坐标及按系列混用线/散点通过 Python API 返回的 Axes 显式实现，不改变母板的既定样式，也不把混合图当作原生 `point-line`。
+
 ## 风格和贡献
 
 默认 Arial（缺失时会警告并改用 Liberation Sans），可选 `--font 'Times New Roman'`（缺失时警告并改用 Liberation Serif）。单幅图依参考图采用约 4:3 的画布：`single` 为 89 × 66 mm，`double` 为 183 × 136 mm；点线图等会留出更接近参考图的坐标框四周空间，而不是把坐标框撑满画布。有序时间组采用琥珀黄、黄绿、绿色到深蓝绿的渐变，避免亮黄在白底上不清楚；互不相关的方法则使用另一组克制的分类色。线型和点形辅助黑白辨识。点线图按同一系列相邻点的成图间距调整粗细（不会因其他系列靠近就缩小标记），散点图独立保持可辨认的点大小；密集点使用有限的透明度而不删除数据。如自动尺寸不合适，可分别指定 `--line-width 1.8`（线宽，pt）和 `--marker-size 5`（标记直径，pt；散点面积为直径平方）；Python API 用 `line_width` 和 `marker_size`。四边坐标轴、朝内刻度、主实次虚网格及图例规则见 [风格约定](scientific-plotting/references/style.md)。需要根据新机器安装依赖或替代字体可以直接做；若要改变其他风格，先明确提出要求并检查结果，不要因为缺字体或图例密集就偷偷更改规则。
