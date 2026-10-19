@@ -154,12 +154,15 @@ def test_cli_exports_requested_formats_and_reproducible_scripts(tmp_path):
     pd.DataFrame({"distance": [0.02, 0.0, 0.01], "measurement": [3, 1, 2]}).to_csv(source, index=False)
     target = tmp_path / "curve"
     args = [sys.executable, str(TEMPLATE), "--input", str(source), "--kind", "point-line",
-            "--x", "distance", "--y", "measurement", "--output", str(target)]
+            "--x", "distance", "--y", "measurement", "--output", str(target),
+            "--line-width", "2.1", "--marker-size", "6.5"]
     subprocess.run(args, check=True, capture_output=True, text=True)
     assert {entry.name for entry in tmp_path.glob("curve.*")} == {"curve.png"}
     assert (tmp_path / "curve_template.py").exists()
     wrapper = tmp_path / "curve_reproduce.py"
     assert wrapper.exists()
+    assert "--line-width" in wrapper.read_text()
+    assert "--marker-size" in wrapper.read_text()
     target.with_suffix(".png").unlink()
     subprocess.run([sys.executable, str(wrapper)], check=True, capture_output=True, text=True)
     assert target.with_suffix(".png").exists()
@@ -274,29 +277,28 @@ def test_point_line_marks_and_strokes_follow_display_density():
     assert sparse_axes.lines[0].get_markersize() == 5.0
     assert sparse_axes.lines[0].get_markerfacecolor() == "white"
     assert dense_axes.lines[0].get_linewidth() == 1.2
-    assert 1.2 <= dense_axes.lines[0].get_markersize() < 2.2
+    assert dense_axes.lines[0].get_markersize() == 2.4
     assert dense_axes.lines[0].get_markerfacecolor() == dense_axes.lines[0].get_color()
     assert len(dense_axes.lines[0].get_xdata()) == 400
     plt.close(sparse_figure)
     plt.close(dense_figure)
 
 
-def test_overlapping_lines_and_scatter_reduce_visual_weight():
+def test_overlapping_series_do_not_shrink_well_spaced_lines():
     shared = pd.DataFrame({"x": [0, 1, 2, 3] * 2, "y": [0, 1, 0, 1] * 2,
                            "series": ["first"] * 4 + ["second"] * 4})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         line_figure, line_axes, _ = render_plot(shared, kind="line", x="x", y="y", group="series")
         scatter_figure, scatter_axes, _ = render_plot(shared, kind="scatter", x="x", y="y")
-    assert all(line.get_linewidth() == 1.2 for line in line_axes.lines)
+    assert all(line.get_linewidth() == 1.8 for line in line_axes.lines)
     assert all(line.get_marker() == "None" for line in line_axes.lines)
-    assert np.all(scatter_axes.collections[0].get_sizes() <= 2.2 ** 2)
-    assert np.all(scatter_axes.collections[0].get_sizes() >= 1.2 ** 2)
+    assert np.all(scatter_axes.collections[0].get_sizes() == 4.5 ** 2)
     plt.close(line_figure)
     plt.close(scatter_figure)
 
 
-def test_scatter_markers_shrink_as_points_get_dense():
+def test_scatter_markers_remain_visible_as_points_get_dense():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         sparse_figure, sparse_axes, _ = render_plot({"x": [0, 1, 2, 3], "y": [0, 1, 0, 1]},
@@ -304,11 +306,56 @@ def test_scatter_markers_shrink_as_points_get_dense():
         dense_figure, dense_axes, _ = render_plot({"x": np.linspace(0, 3, 400),
                                                    "y": np.sin(np.linspace(0, 3, 400))},
                                                  kind="scatter", x="x", y="y")
-    assert np.all(sparse_axes.collections[0].get_sizes() == 5.0 ** 2)
-    assert np.all(dense_axes.collections[0].get_sizes() <= 2.2 ** 2)
+    assert np.all(sparse_axes.collections[0].get_sizes() == 5.5 ** 2)
+    assert np.all(dense_axes.collections[0].get_sizes() == 4.5 ** 2)
     assert len(dense_axes.collections[0].get_offsets()) == 400
+    assert dense_axes.collections[0].get_alpha() == 0.85
     plt.close(sparse_figure)
     plt.close(dense_figure)
+
+
+def test_close_other_series_do_not_shrink_point_line_markers():
+    points = pd.DataFrame({"year": [*range(12)] * 2,
+                           "value": [*range(12)] * 2,
+                           "series": ["Jan"] * 12 + ["Apr"] * 12})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        figure, axes, _ = render_plot(points, kind="point-line", x="year", y="value",
+                                     group="series", size="double")
+    assert all(line.get_linewidth() == 1.8 for line in axes.lines)
+    assert all(line.get_markersize() == 5.0 for line in axes.lines)
+    plt.close(figure)
+
+
+def test_edge_grid_does_not_overlap_axis_border():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        figure, axes, _ = render_plot({"year": [1970, 2020], "life": [70.6, 84.7]},
+                                     kind="point-line", x="year", y="life", size="double")
+    ticks = {round(tick.get_loc()): tick for tick in axes.yaxis.get_major_ticks()}
+    assert not ticks[70].gridline.get_visible()
+    assert ticks[72].gridline.get_visible()
+    assert ticks[70].tick1line.get_visible()
+    plt.close(figure)
+
+
+def test_explicit_marker_and_stroke_overrides():
+    data = {"x": [0, 1, 2], "y": [1, 2, 3]}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        figure, axes, _ = render_plot(data, kind="point-line", x="x", y="y",
+                                     line_width=2.1, marker_size=6.5)
+        scatter_figure, scatter_axes, _ = render_plot(data, kind="scatter", x="x", y="y",
+                                                     marker_size=6.5)
+    assert axes.lines[0].get_linewidth() == 2.1
+    assert axes.lines[0].get_markersize() == 6.5
+    assert scatter_axes.collections[0].get_sizes()[0] == 6.5 ** 2
+    plt.close(figure)
+    plt.close(scatter_figure)
+    with pytest.raises(ValueError, match="marker_size"):
+        render_plot(data, kind="line", x="x", y="y", marker_size=3)
+    with pytest.raises(ValueError, match="line_width"):
+        render_plot(data, kind="scatter", x="x", y="y", line_width=2)
 
 
 def test_rejects_labels_that_would_be_cropped(tmp_path):

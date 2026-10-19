@@ -127,45 +127,59 @@ def _style_axes(axes: mpl.axes.Axes, kind: str) -> None:
     axes.grid(True, axis=grid_axes, which="minor", linestyle="--", linewidth=0.45, color="#d1d1d1")
 
 
-def _adapt_strokes(axes: mpl.axes.Axes, kind: str) -> None:
+def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
+                   line_width: float | None = None, marker_size: float | None = None) -> None:
     if kind not in ("point-line", "line", "scatter"):
         return
-    point_sets = [line.get_path().transformed(line.get_transform()).vertices for line in axes.lines]
-    point_sets.extend(axes.transData.transform(collection.get_offsets())
-                      for collection in axes.collections if isinstance(collection, PathCollection))
-    point_sets = [points for points in point_sets if len(points)]
-    if not point_sets:
-        return
-    points = np.concatenate(point_sets)
-    sample = points[np.linspace(0, len(points) - 1, min(len(points), 800), dtype=int)]
-    if len(sample) > 1:
-        distances = np.linalg.norm(sample[:, None, :] - sample[None, :, :], axis=2)
-        np.fill_diagonal(distances, np.inf)
-        spacing = float(np.median(np.min(distances, axis=1)))
-    else:
-        spacing = np.inf
-    area = axes.get_window_extent().width * axes.get_window_extent().height
-    average_spacing = np.sqrt(area / len(points))
-    visible_spacing = min(spacing, average_spacing)
-    crowded = visible_spacing < 12 or len(point_sets) >= 7
-    sparse = visible_spacing >= 26 and len(point_sets) <= 5
-    line_width, marker_size, marker_edge = ((1.2, 2.2, 0.4) if crowded else
-                                            (1.8, 5.0, 0.8) if sparse else
-                                            (1.45, 3.5, 0.7))
-    if crowded:
-        marker_size = float(np.clip(visible_spacing * 72 / axes.figure.dpi * 0.7, 1.2, 2.2))
-    for line in axes.lines:
-        line.set_linewidth(line_width)
-        if kind == "point-line":
-            line.set_markersize(marker_size)
-            line.set_markeredgewidth(marker_edge)
-            if crowded:
-                line.set_markerfacecolor(line.get_color())
     if kind == "scatter":
+        point_sets = [axes.transData.transform(collection.get_offsets()) for collection in axes.collections
+                      if isinstance(collection, PathCollection) and len(collection.get_offsets())]
+        if not point_sets:
+            return
+        points = np.concatenate(point_sets)
+        sample = points[np.linspace(0, len(points) - 1, min(len(points), 800), dtype=int)]
+        if len(sample) > 1:
+            distances = np.linalg.norm(sample[:, None, :] - sample[None, :, :], axis=2)
+            np.fill_diagonal(distances, np.inf)
+            spacing = float(np.median(np.min(distances, axis=1)))
+        else:
+            spacing = np.inf
+        diameter = marker_size if marker_size is not None else (4.5 if spacing < 12 else 5.5)
         for collection in axes.collections:
             if isinstance(collection, PathCollection):
-                collection.set_sizes(np.full(len(collection.get_offsets()), marker_size ** 2))
-                collection.set_linewidth(marker_edge / 2)
+                collection.set_sizes(np.full(len(collection.get_offsets()), diameter ** 2))
+                collection.set_linewidth(0.55)
+                if spacing < 12:
+                    collection.set_alpha(0.85)
+        return
+
+    spacings = []
+    for line in axes.lines:
+        vertices = line.get_path().transformed(line.get_transform()).vertices
+        if len(vertices) > 1:
+            spacings.append(float(np.median(np.linalg.norm(np.diff(vertices, axis=0), axis=1))))
+    spacing = float(np.median(spacings)) if spacings else np.inf
+    width = 1.2 if spacing < 4 else 1.35 if spacing < 12 else 1.8 if spacing >= 26 else 1.45
+    diameter = 2.4 if spacing < 4 else 3.5 if spacing < 12 else 5.0 if spacing >= 26 else 3.5
+    for line in axes.lines:
+        line.set_linewidth(line_width if line_width is not None else width)
+        if kind == "point-line":
+            line.set_markersize(marker_size if marker_size is not None else diameter)
+            line.set_markeredgewidth(0.7 if spacing < 26 else 0.8)
+            if spacing < 12:
+                line.set_markerfacecolor(line.get_color())
+
+
+def _hide_edge_grids(axes: mpl.axes.Axes) -> None:
+    border = axes.get_window_extent()
+    padding = 4 * axes.figure.dpi / 72
+    for axis, low, high, coordinate in ((axes.xaxis, border.x0, border.x1, 0),
+                                        (axes.yaxis, border.y0, border.y1, 1)):
+        for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks()):
+            position = axes.transData.transform((tick.get_loc(), 0) if coordinate == 0
+                                                else (0, tick.get_loc()))[coordinate]
+            if min(abs(position - low), abs(position - high)) < padding:
+                tick.gridline.set_visible(False)
 
 
 def _line_vertices(axes: mpl.axes.Axes) -> np.ndarray:
@@ -260,6 +274,8 @@ def render_plot(
     output: str | Path | None = None,
     formats: tuple[str, ...] | list[str] | None = None,
     dpi: int = 300,
+    line_width: float | None = None,
+    marker_size: float | None = None,
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or size not in SIZES_MM or group_kind not in ("auto", "ordered", "categorical"):
@@ -269,6 +285,10 @@ def render_plot(
         raise ValueError(f"Formats must be drawn from {FORMATS}.")
     if not 72 <= dpi <= 1200:
         raise ValueError("DPI must be between 72 and 1200.")
+    for label, value, allowed, maximum in (("line_width", line_width, ("point-line", "line"), 8),
+                                           ("marker_size", marker_size, ("point-line", "scatter"), 20)):
+        if value is not None and (kind not in allowed or not np.isfinite(value) or not 0 < value <= maximum):
+            raise ValueError(f"{label} must be a positive finite value up to {maximum} for {allowed}.")
     face = resolve_font(font)
     frame = _frame(data, kind)
     text_sizes = TEXT_SIZES_PT[size]
@@ -370,8 +390,9 @@ def render_plot(
             figure.subplots_adjust(left=max(0.135, margins.left), right=min(0.91, margins.right),
                                    bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
         figure.canvas.draw()
-        _adapt_strokes(axes, kind)
+        _adapt_strokes(axes, kind, line_width, marker_size)
         _place_legend(figure, axes, size)
+        _hide_edge_grids(axes)
         _check_text_layout(figure)
         exported = []
         if output is not None:
@@ -417,6 +438,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--size", choices=tuple(SIZES_MM), default="single")
     parser.add_argument("--format", action="append", dest="formats", choices=FORMATS)
     parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument("--line-width", type=float, help="Line stroke width in points (line and point-line)")
+    parser.add_argument("--marker-size", type=float, help="Marker diameter in points (point-line and scatter)")
     parser.add_argument("--sheet", default="0", help="Excel sheet name or zero-based number")
     parser.add_argument("--index-col", help="Matrix heatmap row-label column")
     parser.add_argument("--output", type=Path, required=True, help="Output basename; suffix does not override --format")
@@ -435,6 +458,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         value=options.value, group_kind=options.group_kind, xlabel=options.xlabel,
         ylabel=options.ylabel, title=options.title, font=options.font, size=options.size,
         output=options.output, formats=options.formats, dpi=options.dpi,
+        line_width=options.line_width, marker_size=options.marker_size,
     )
     plt.close(figure)
     if not options.no_script:
