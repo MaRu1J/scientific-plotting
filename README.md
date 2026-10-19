@@ -1,6 +1,6 @@
 # Scientific Plotting Skill
 
-科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。第一版支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`。
+科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标与参考误差子图。
 
 ## 安装和使用
 
@@ -55,7 +55,79 @@ plt.close(figure)
 .venv/bin/python figures/cfd_validation/reproduce.py
 ```
 
-输出目录 `figures/cfd_validation/` 包含 PNG、逐图输入 CSV、数据源/校验和/审计记录 `manifest.json`、中文报告 `REPORT.md`、可浏览画廊 `index.html`，以及离线复现所需的脚本与母板副本。对数坐标及按系列混用线/散点通过 Python API 返回的 Axes 显式实现，不改变母板的既定样式，也不把混合图当作原生 `point-line`。
+输出目录 `figures/cfd_validation/` 是保留的上一轮基线，包含 16 张 PNG、逐图输入 CSV、数据源/校验和/审计记录 `manifest.json`、中文报告、画廊和离线复现快照。旧快照保留当时通过 Axes 实现的对数轴及混合图方式；当前母板已原生支持这些功能，不需手工叠图。
+
+## CFD 原生增强
+
+原有调用默认不变：`line` 所有组纯线，`point-line` 所有组点+线，`scatter` 纯散点；混合图必须显式 `--kind mixed`。`--xscale` / `--yscale` 支持 `linear`（默认）和 `log`，对数轴输入出现零或负数会报错，不删除数据。仅线、点线、散点和混合图接受非线性坐标。
+
+先生成本轮独立图集（仅读取已缓存 DNS，不联网、不覆盖旧图）：
+
+```bash
+.venv/bin/python examples/validate_cfd_optimization.py
+.venv/bin/python figures/cfd_optimization/reproduce.py
+.venv/bin/python -m pytest -q
+```
+
+`figures/cfd_optimization/` 包含 13 张原生验证图、3 张总览及黑白复核图、输入 CSV、逐图参数与系列 JSON、原始 DNS 校验和、`manifest.json`、`audit.json`、误差定义/插值记录、母板和运行脚本快照。复制整个目录后可离线运行 `reproduce.py`，无需原仓库或原始 DNS 路径；需要当前项目已有的 Python 科学计算依赖及 Pillow。`REPORT.md` 和 `VALIDATION.md` 记录图像检查与验证结果。
+
+### CLI 示例
+
+残差收敛（保留迭代 0，只有残差轴取对数）：
+
+```bash
+.venv/bin/python scientific-plotting/scripts/plot_template.py \
+  --input figures/cfd_optimization/data/01_residual_single.csv \
+  --kind line --x x --y y --group series --yscale log \
+  --xlabel 'Iteration (-)' --ylabel 'Normalized residual (-)' \
+  --output figures/cfd_optimization/cli_residual
+```
+
+混合泊肃叶流对比及误差子图（使用图集内实际交付的系列配置）：
+
+```bash
+.venv/bin/python scientific-plotting/scripts/plot_template.py \
+  --input figures/cfd_optimization/data/05_pipe_error_double.csv \
+  --kind mixed --x x --y y --group series --group-kind categorical --size double \
+  --series-config figures/cfd_optimization/data/05_pipe_error_double_styles.json \
+  --error-reference Theory --error-definition signed --error-interpolation linear \
+  --xlabel 'Radius, r/R' --ylabel 'Velocity, u/Ub' --error-ylabel 'Signed error in u/Ub' \
+  --output figures/cfd_optimization/cli_pipe
+```
+
+系列配置形如（键必须与 CSV 分组标签一致）：
+
+```json
+{
+  "Theory": {"kind": "line", "linestyle": "-", "color": "#126b80", "line_width": 1.8},
+  "CFD (synth.)": {"kind": "point-line", "linestyle": "--", "marker": "s", "marker_size": 4},
+  "Samples (synth.)": {"kind": "scatter", "marker": "^", "marker_size": 5.5}
+}
+```
+
+配置可按系列指定线型、点形、颜色、线宽与点径；纯线不接受点形，纯散点不接受连接线型。原生 `line`/`point-line` 也接受配置外观，但不允许在配置中偷偷改变系列类型。全局尺寸覆盖自动值，系列尺寸再覆盖全局值。`--legend outside` 显式外置：优先右侧，长标签尝试上方，不缩字号、不加大画布；仍放不下则明确报错。
+
+CLI 默认仍只导出 PNG 图像，原有母板副本和启动器保留，额外固定一份系列 JSON 防止源配置丢失。启用误差子图后增加 `*_metadata.json` 记录公式、参考和逐组比较方法。通用 CLI 启动器仍记录绝对输入路径，数据移动需改路径；上述完整图集的复现包则可整体搬移。
+
+### Python 误差对比
+
+```python
+figure, axes, paths = render_plot(
+    observations, kind="mixed", x="x", y="y", group="series", size="double",
+    xscale="linear", yscale="linear", series_styles=styles,
+    error={"reference": "Theory", "definition": "signed", "interpolation": "linear",
+           "ylabel": "Signed error in u/Ub"},
+    output="figures/comparison",
+)
+error_axes = figure.scientific_error_axes
+audit = figure.scientific_metadata
+```
+
+这里 `observations`/`styles` 是调用方自己的长表和配置；可用图集 CSV 与对应 `*_styles.json` 实例化。有符号误差 `y-ref`，绝对误差 `abs(y-ref)`，相对误差 `(y-ref)/abs(ref)`（比例而非百分比）。默认**严格匹配坐标和顺序**，不是按等长行号相减；只有显式指定 `linear` 才在线性数据坐标中插值参考，参考必须严格递增且唯一，禁止外推。相对误差参考为零仅支持明确报错（`zero_reference='raise'`），不加 epsilon、不掩码、不删零点；可选择绝对误差。下图纵轴始终线性、横轴与主图共享，视觉身份跟随主图，不添加拟合、平滑、误差棒或置信区间。
+
+自动线宽/点径现在按**每个系列最终坐标框中的相邻点间距**独立判断，包含对数变换和图例外置后的坐标框变化。修复旧逻辑把多系列间距的中位数再次混合的问题；不会因为密集 DNS 或重合的另一组缩小稀疏组。空心/实心及透明度约定不变，未抽稀、未跳过标记。散点的密度判断同样局限在自身系列。因修复尺寸/布局，旧输入的 PNG 不保证与旧母板字节一致；旧快照的离线复现不受影响。
+
+限制：仍可能存在真实密点重叠；误差面板会减少主图可用高度，单栏长图例尤需检查实际印刷尺寸；不提供局部放大、自动平滑/拟合、外推或零参考替换策略。Kawamura 的 mean/uu/ww 和 vv/-uv 始终保留各自交错网格。合成 CFD、测量及残差仅用于绘图检验，不能据此宣称求解器或实验精度得到验证。
 
 ## 风格和贡献
 

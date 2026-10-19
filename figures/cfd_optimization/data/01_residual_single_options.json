@@ -1,0 +1,11 @@
+{
+  "kind": "line",
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "size": "single",
+  "yscale": "log",
+  "xlabel": "Iteration (-)",
+  "ylabel": "Normalized residual (-)"
+}

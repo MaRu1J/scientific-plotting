@@ -1,0 +1,4 @@
+README residual CLI: PASS
+README mixed/error CLI: PASS
+CLI generated launcher: PASS
+Outputs: /tmp/cfd-cli-validation-FhWs64

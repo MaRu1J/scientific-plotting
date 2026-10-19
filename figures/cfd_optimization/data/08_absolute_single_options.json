@@ -1,0 +1,14 @@
+{
+  "kind": "line",
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "size": "single",
+  "error": {
+    "reference": "Theory",
+    "definition": "absolute"
+  },
+  "xlabel": "Radius, r/R",
+  "ylabel": "Velocity, u/Ub"
+}

@@ -1,0 +1,377 @@
+{
+  "baseline_commit": "4cc1c1c",
+  "seed": 20261019,
+  "provenance": [
+    {
+      "file": "Poi180_4th_E.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi180_4th_E.dat",
+      "Re_tau": 180.0,
+      "Re_bulk": 5665.0,
+      "rows": 240,
+      "shear_rows": 240,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "8bbf90c850d7dc525e83f3d7b346707d45ce8f5fad889976e720b2ddfcdcb36c"
+    },
+    {
+      "file": "Poi395_4th_D.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi395_4th_D.dat",
+      "Re_tau": 395.0,
+      "Re_bulk": 14124.0,
+      "rows": 240,
+      "shear_rows": 240,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "b89a0cede344a0e4f5fa6d33d923939af08f1d1d4b0336a11c24891d10c414d1"
+    },
+    {
+      "file": "Poi180_2nd_A.dat",
+      "url": "https://www.rs.tus.ac.jp/~t2lab/db/poi/text/Poi180_2nd_A.dat",
+      "Re_tau": 180.0,
+      "Re_bulk": 5692.0,
+      "rows": 33,
+      "shear_rows": 33,
+      "staggered_mean_and_shear_grids": true,
+      "sha256": "82f1b30ac351394b054d12a1c89f24c809cbdcae75d2d5c5fa9ff817436c217c"
+    }
+  ],
+  "cases": [
+    {
+      "id": "01_residual_single",
+      "source": "Explicit synthetic residuals, not solver output.",
+      "parameters": "n=0..2000; R=A*10**(-n/tau)*(1+0.08*sin(n/37)); (A,tau)=(1,210),(.3,240),(.1,270).",
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "yscale": "log",
+        "xlabel": "Iteration (-)",
+        "ylabel": "Normalized residual (-)"
+      },
+      "input": "data/01_residual_single.csv",
+      "input_sha256": "20c28802c1d32dcbdda57e85ce1d9a6ddf6f2e0f7223d6a8372915ca4cb2ad21"
+    },
+    {
+      "id": "02_dns_mixed_double",
+      "source": "Cached Kawamura DNS; 4th/2nd denote source discretizations. Viscous law is a theoretical near-wall reference.",
+      "parameters": "All 240 fourth-order and 33 second-order DNS positions retained; law u+=y+ explicitly limited to 0.1<=y+<=5.",
+      "options": {
+        "kind": "mixed",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "xscale": "log",
+        "xlabel": "Wall distance, $y^+$",
+        "ylabel": "Mean velocity, $u^+$",
+        "series_styles": {
+          "DNS 180 (4th)": {
+            "kind": "point-line",
+            "marker": "o"
+          },
+          "DNS 180 (2nd)": {
+            "kind": "scatter",
+            "marker": "s"
+          },
+          "Viscous law": {
+            "kind": "line",
+            "linestyle": "--"
+          }
+        }
+      },
+      "input": "data/02_dns_mixed_double.csv",
+      "input_sha256": "77fd2289e997bc04341cacfe0e273def2042ce9376db037fd2faab99da913c4c"
+    },
+    {
+      "id": "03_dns_single",
+      "source": "Cached Kawamura DNS, original mean-table coordinates.",
+      "parameters": "Re_tau=180/395; all positions; native line, no markers.",
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "xscale": "log",
+        "xlabel": "Wall distance, $y^+$",
+        "ylabel": "Mean velocity, $u^+$"
+      },
+      "input": "data/03_dns_single.csv",
+      "input_sha256": "14c402d659f5a49a5695ff2a604aae5c27ed3a27d96a203c4a6abe848bf782a2"
+    },
+    {
+      "id": "04_dns_staggered",
+      "source": "Cached Kawamura Re_tau=395 DNS; normal and shear tables are read independently.",
+      "parameters": "Mean/uu/ww and vv/-uv keep their original staggered y+; no merging, alignment or interpolation.",
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "xscale": "log",
+        "xlabel": "Wall distance, $y^+$",
+        "ylabel": "Reynolds stress (+)"
+      },
+      "input": "data/04_dns_staggered.csv",
+      "input_sha256": "747244b1959efd00422fed83a8e5260c95eb00741d81894387ae3f931b73f380"
+    },
+    {
+      "id": "05_pipe_error_double",
+      "source": "Hagen-Poiseuille analytic reference plus explicitly synthetic numerical and measurement illustrations.",
+      "parameters": "Re_D=1000; u/Ub=2*(1-r**2); synthetic multipliers 1+0.002*r**2 and 1+0.0005*r**2; 201 theory/coarse, 41 fine and 21 synthetic sample positions (explicit generated grids, no thinning); noise std=.0004*(1-r**2); seed=20261019; mismatch uses explicit linear interpolation in data coordinates.",
+      "options": {
+        "kind": "mixed",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "series_styles": {
+          "Theory": {
+            "kind": "line",
+            "linestyle": "-"
+          },
+          "Coarse (synth.)": {
+            "kind": "line",
+            "linestyle": "--"
+          },
+          "Fine (synth.)": {
+            "kind": "point-line",
+            "marker": "D",
+            "linestyle": "-."
+          },
+          "Samples (synth.)": {
+            "kind": "scatter",
+            "marker": "^"
+          }
+        },
+        "error": {
+          "reference": "Theory",
+          "definition": "signed",
+          "interpolation": "linear"
+        },
+        "xlabel": "Radius, r/R",
+        "ylabel": "Velocity, u/Ub"
+      },
+      "input": "data/05_pipe_error_double.csv",
+      "input_sha256": "f5786e4368946e5397a44e139cb6822d9f0a0e4a23956577b6d82fb407c6e1e5"
+    },
+    {
+      "id": "06_pipe_error_single",
+      "source": "Hagen-Poiseuille analytic reference plus explicitly synthetic numerical and measurement illustrations.",
+      "parameters": "Re_D=1000; u/Ub=2*(1-r**2); synthetic multipliers 1+0.002*r**2 and 1+0.0005*r**2; 201 theory/coarse, 41 fine and 21 synthetic sample positions (explicit generated grids, no thinning); noise std=.0004*(1-r**2); seed=20261019; mismatch uses explicit linear interpolation in data coordinates.",
+      "options": {
+        "kind": "mixed",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "series_styles": {
+          "Theory": {
+            "kind": "line",
+            "linestyle": "-"
+          },
+          "Coarse (synth.)": {
+            "kind": "line",
+            "linestyle": "--"
+          },
+          "Fine (synth.)": {
+            "kind": "point-line",
+            "marker": "D",
+            "linestyle": "-."
+          },
+          "Samples (synth.)": {
+            "kind": "scatter",
+            "marker": "^"
+          }
+        },
+        "error": {
+          "reference": "Theory",
+          "definition": "signed",
+          "interpolation": "linear"
+        },
+        "xlabel": "Radius, r/R",
+        "ylabel": "Velocity, u/Ub"
+      },
+      "input": "data/06_pipe_error_single.csv",
+      "input_sha256": "f5786e4368946e5397a44e139cb6822d9f0a0e4a23956577b6d82fb407c6e1e5"
+    },
+    {
+      "id": "07_relative_error",
+      "source": "Hagen-Poiseuille analytic reference plus explicitly synthetic numerical and measurement illustrations.",
+      "parameters": "Explicit generated domain 0<=r/R<=0.95 (no removed rows); relative=(y-ref)/abs(ref); zero policy raise.",
+      "options": {
+        "kind": "point-line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "error": {
+          "reference": "Theory",
+          "definition": "relative"
+        },
+        "xlabel": "Radius, r/R",
+        "ylabel": "Velocity, u/Ub"
+      },
+      "input": "data/07_relative_error.csv",
+      "input_sha256": "6d055ddee566e5cfa4df425efa6e062eb49ab6bdd6981988cd56985825d74262"
+    },
+    {
+      "id": "08_absolute_single",
+      "source": "Hagen-Poiseuille analytic reference plus explicitly synthetic numerical and measurement illustrations.",
+      "parameters": "u_synth=u_exact-0.0016*r*(1-r); absolute=abs(y-ref), including zero wall reference.",
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "error": {
+          "reference": "Theory",
+          "definition": "absolute"
+        },
+        "xlabel": "Radius, r/R",
+        "ylabel": "Velocity, u/Ub"
+      },
+      "input": "data/08_absolute_single.csv",
+      "input_sha256": "a0a815c90bc8b0e8c79940e1da5b19509cf6b9ca822e34abdc90ad2ede319133"
+    },
+    {
+      "id": "09_source_order",
+      "source": "Synthetic path demonstrating nonmonotonic source-row connections.",
+      "parameters": "Original x order: .2,.8,.5,1,.1,.6; no sorting.",
+      "options": {
+        "kind": "point-line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "xlabel": "x/L (-)",
+        "ylabel": "y/L (-)"
+      },
+      "input": "data/09_source_order.csv",
+      "input_sha256": "2e3d73058200da2f4ea0a9d2b7eb206bdf72fff4c44aeaf058522004ea4ca77b"
+    },
+    {
+      "id": "10_long_legend_times",
+      "source": "Hagen-Poiseuille analytic reference plus explicitly synthetic numerical and measurement illustrations.",
+      "parameters": "Re_D=1000; u/Ub=2*(1-r**2); synthetic multipliers 1+0.002*r**2 and 1+0.0005*r**2; 201 theory/coarse, 41 fine and 21 synthetic sample positions (explicit generated grids, no thinning); noise std=.0004*(1-r**2); seed=20261019; mismatch uses explicit linear interpolation in data coordinates. Times requested; outside legend; explicit per-series sizes 1.8 pt/4 pt where applicable.",
+      "options": {
+        "kind": "mixed",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "font": "Times New Roman",
+        "legend": "outside",
+        "series_styles": {
+          "Hagen-Poiseuille theoretical reference": {
+            "kind": "line",
+            "linestyle": "-",
+            "line_width": 1.8
+          },
+          "Coarse-grid numerical illustration (synthetic)": {
+            "kind": "line",
+            "linestyle": "--",
+            "line_width": 1.8
+          },
+          "Fine-grid numerical illustration (synthetic)": {
+            "kind": "point-line",
+            "marker": "D",
+            "linestyle": "-.",
+            "line_width": 1.8,
+            "marker_size": 4
+          },
+          "Measurement illustration (synthetic)": {
+            "kind": "scatter",
+            "marker": "^",
+            "marker_size": 4
+          }
+        },
+        "error": {
+          "reference": "Hagen-Poiseuille theoretical reference",
+          "definition": "signed",
+          "interpolation": "linear"
+        },
+        "xlabel": "Radius, r/R",
+        "ylabel": "Velocity, u/Ub"
+      },
+      "input": "data/10_long_legend_times.csv",
+      "input_sha256": "bfc4ce353b71e02cd36a39770e97bd2c1d0b4a4786be52ab1b104c66516f33a6"
+    },
+    {
+      "id": "11_density_single",
+      "source": "Two synthetic samplings of the same function; sparse markers must not inherit dense sizes.",
+      "parameters": "y=exp(-x); 5 and 1001 points; native point-line; every point retained and marked; outside legend.",
+      "options": {
+        "kind": "point-line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "single",
+        "legend": "outside",
+        "xlabel": "x/L (-)",
+        "ylabel": "Signal (-)"
+      },
+      "input": "data/11_density_single.csv",
+      "input_sha256": "654dd1ce5455a45d0c84bfff31ca500fb97419f8e9c43575bb964b65747d161f"
+    },
+    {
+      "id": "12_density_double",
+      "source": "Two synthetic samplings of the same function; sparse markers must not inherit dense sizes.",
+      "parameters": "y=exp(-x); 5 and 1001 points; native point-line; every point retained and marked; outside legend.",
+      "options": {
+        "kind": "point-line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "legend": "outside",
+        "xlabel": "x/L (-)",
+        "ylabel": "Signal (-)"
+      },
+      "input": "data/12_density_double.csv",
+      "input_sha256": "654dd1ce5455a45d0c84bfff31ca500fb97419f8e9c43575bb964b65747d161f"
+    },
+    {
+      "id": "13_loglog_pointline",
+      "source": "Explicit synthetic scaling curve, not a physical fit.",
+      "parameters": "x=geomspace(.01,100,81); y=x**(-.5).",
+      "options": {
+        "kind": "point-line",
+        "x": "x",
+        "y": "y",
+        "group": "series",
+        "group_kind": "categorical",
+        "size": "double",
+        "xscale": "log",
+        "yscale": "log",
+        "xlabel": "x (-)",
+        "ylabel": "y (-)"
+      },
+      "input": "data/13_loglog_pointline.csv",
+      "input_sha256": "2d1557dc6223317592a63e3023b06ff322f056377a2233b456e53138aa370b56"
+    }
+  ],
+  "versions": {
+    "python": "3.14.4",
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4",
+    "pandas": "3.0.6"
+  },
+  "notes": "DNS is real Kawamura data; CFD/measurements/residuals explicitly synthetic. No fitting or uncertainty inferred.",
+  "template_sha256": "1cb6e812464118d084e706263ba5366f4b2dd018d29065e1af785dadce6fbe5a",
+  "runner_sha256": "7c7bd6bd5b689d988a1b08605908b1bfc66d72fae359f437e5b525265f7a2be2"
+}

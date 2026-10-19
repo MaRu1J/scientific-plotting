@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -12,7 +13,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.collections import PathCollection
 from matplotlib import colors, font_manager
-from matplotlib.ticker import AutoMinorLocator
+from matplotlib.ticker import AutoMinorLocator, LogFormatterSciNotation, LogLocator, NullFormatter
 import numpy as np
 import pandas as pd
 
@@ -24,7 +25,8 @@ TEXT_SIZES_PT = {
     "multipanel": {"label": 11, "tick": 9.5, "legend": 9.5, "title": 11.5},
 }
 FORMATS = ("png", "svg", "pdf", "tiff", "eps")
-KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin")
+KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed")
+SERIES_KINDS = ("line", "point-line", "scatter")
 FONTS = {"Arial": "Liberation Sans", "Times New Roman": "Liberation Serif"}
 CATEGORICAL_COLORS = ("#126b80", "#b16a25", "#75629b", "#4c8149", "#a65659", "#8c6e45", "#2a8b83", "#566074")
 ORDERED_COLORS = ("#c9a61b", "#94b32c", "#58a94b", "#278f70", "#136e85")
@@ -119,24 +121,28 @@ def _style_axes(axes: mpl.axes.Axes, kind: str) -> None:
     axes.tick_params(which="minor", length=2.5, width=0.65)
     if kind == "heatmap":
         return
-    axes.yaxis.set_minor_locator(AutoMinorLocator(2))
     grid_axes = "y" if kind in ("bar", "violin") else "both"
-    if grid_axes == "both":
-        axes.xaxis.set_minor_locator(AutoMinorLocator(2))
+    for axis in (axes.yaxis, axes.xaxis) if grid_axes == "both" else (axes.yaxis,):
+        if axis.get_scale() == "log":
+            axis.set_major_locator(LogLocator(base=10, numticks=1000))
+            axis.set_minor_locator(LogLocator(base=10, subs=np.arange(2, 10), numticks=1000))
+            axis.set_major_formatter(LogFormatterSciNotation(base=10))
+            axis.set_minor_formatter(NullFormatter())
+        else:
+            axis.set_minor_locator(AutoMinorLocator(2))
     axes.grid(True, axis=grid_axes, which="major", linestyle="-", linewidth=0.55, color="#b1b1b1")
     axes.grid(True, axis=grid_axes, which="minor", linestyle="--", linewidth=0.45, color="#d1d1d1")
 
 
 def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
                    line_width: float | None = None, marker_size: float | None = None) -> None:
-    if kind not in ("point-line", "line", "scatter"):
+    if kind not in (*SERIES_KINDS, "mixed"):
         return
-    if kind == "scatter":
-        point_sets = [axes.transData.transform(collection.get_offsets()) for collection in axes.collections
-                      if isinstance(collection, PathCollection) and len(collection.get_offsets())]
-        if not point_sets:
-            return
-        points = np.concatenate(point_sets)
+    for collection in axes.collections:
+        if not isinstance(collection, PathCollection) or not len(collection.get_offsets()):
+            continue
+        style = getattr(collection, "_scientific_style", {})
+        points = axes.transData.transform(collection.get_offsets()) * 120 / axes.figure.dpi
         sample = points[np.linspace(0, len(points) - 1, min(len(points), 800), dtype=int)]
         if len(sample) > 1:
             distances = np.linalg.norm(sample[:, None, :] - sample[None, :, :], axis=2)
@@ -144,30 +150,41 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
             spacing = float(np.median(np.min(distances, axis=1)))
         else:
             spacing = np.inf
-        diameter = marker_size if marker_size is not None else (4.5 if spacing < 12 else 5.5)
-        for collection in axes.collections:
-            if isinstance(collection, PathCollection):
-                collection.set_sizes(np.full(len(collection.get_offsets()), diameter ** 2))
-                collection.set_linewidth(0.55)
-                if spacing < 12:
-                    collection.set_alpha(0.85)
-        return
-
-    spacings = []
+        override = style.get("marker_size", marker_size)
+        diameter = override if override is not None else (4.5 if spacing < 12 else 5.5)
+        collection.set_sizes(np.full(len(collection.get_offsets()), diameter ** 2))
+        collection.set_linewidth(0.55)
+        collection.set_alpha(0.85 if spacing < 12 else 1)
     for line in axes.lines:
+        style = getattr(line, "_scientific_style", {})
+        series_kind = style.get("kind", kind)
         vertices = line.get_path().transformed(line.get_transform()).vertices
-        if len(vertices) > 1:
-            spacings.append(float(np.median(np.linalg.norm(np.diff(vertices, axis=0), axis=1))))
-    spacing = float(np.median(spacings)) if spacings else np.inf
-    width = 1.2 if spacing < 4 else 1.35 if spacing < 12 else 1.8 if spacing >= 26 else 1.45
-    diameter = 2.4 if spacing < 4 else 3.5 if spacing < 12 else 5.0 if spacing >= 26 else 3.5
-    for line in axes.lines:
-        line.set_linewidth(line_width if line_width is not None else width)
-        if kind == "point-line":
-            line.set_markersize(marker_size if marker_size is not None else diameter)
+        border = axes.get_window_extent()
+        visible = (np.isfinite(vertices).all(axis=1) & (vertices[:, 0] >= border.x0)
+                   & (vertices[:, 0] <= border.x1) & (vertices[:, 1] >= border.y0) & (vertices[:, 1] <= border.y1))
+        distances = np.linalg.norm(np.diff(vertices, axis=0), axis=1)[visible[:-1] & visible[1:]]
+        spacing = float(np.median(distances) * 120 / axes.figure.dpi) if len(distances) else np.inf
+        width = 1.2 if spacing < 4 else 1.35 if spacing < 12 else 1.8 if spacing >= 26 else 1.45
+        diameter = 2.4 if spacing < 4 else 3.5 if spacing < 12 else 5.0 if spacing >= 26 else 3.5
+        width_override = style.get("line_width", line_width)
+        marker_override = style.get("marker_size", marker_size)
+        line.set_linewidth(width_override if width_override is not None else width)
+        if series_kind == "point-line":
+            line.set_markersize(marker_override if marker_override is not None else diameter)
             line.set_markeredgewidth(0.7 if spacing < 26 else 0.8)
-            if spacing < 12:
-                line.set_markerfacecolor(line.get_color())
+            line.set_markerfacecolor(line.get_color() if spacing < 12 else "white")
+
+
+def _adapt_log_ticks(axes) -> None:
+    border = axes.get_window_extent()
+    for axis, limits, length in ((axes.xaxis, axes.get_xlim(), border.width),
+                                  (axes.yaxis, axes.get_ylim(), border.height)):
+        if axis.get_scale() != "log":
+            continue
+        decades = abs(np.diff(np.log10(limits))[0])
+        spacing = length * 120 / axes.figure.dpi / decades
+        subs = np.arange(2, 10) if spacing >= 60 else (2, 5)
+        axis.set_minor_locator(LogLocator(base=10, subs=subs, numticks=1000))
 
 
 def _hide_edge_grids(axes: mpl.axes.Axes) -> None:
@@ -176,8 +193,9 @@ def _hide_edge_grids(axes: mpl.axes.Axes) -> None:
     for axis, low, high, coordinate in ((axes.xaxis, border.x0, border.x1, 0),
                                         (axes.yaxis, border.y0, border.y1, 1)):
         for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks()):
-            position = axes.transData.transform((tick.get_loc(), 0) if coordinate == 0
-                                                else (0, tick.get_loc()))[coordinate]
+            transform = axes.get_xaxis_transform() if coordinate == 0 else axes.get_yaxis_transform()
+            position = transform.transform((tick.get_loc(), 0) if coordinate == 0
+                                           else (0, tick.get_loc()))[coordinate]
             if min(abs(position - low), abs(position - high)) < padding:
                 tick.gridline.set_visible(False)
 
@@ -206,30 +224,37 @@ def _line_vertices(axes: mpl.axes.Axes) -> np.ndarray:
     return np.concatenate(sampled) if sampled else np.empty((0, 2))
 
 
-def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str) -> None:
+def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
+                  placement: str = "auto") -> None:
     handles, labels = axes.get_legend_handles_labels()
     if not handles:
         return
     renderer = figure.canvas.get_renderer()
     points = _line_vertices(axes)
     axes_box = axes.get_window_extent(renderer)
+    radii = [line.get_markersize() / 2 if line.get_marker() not in (None, "None", "", " ")
+             else line.get_linewidth() / 2 for line in axes.lines]
+    radii.extend(float(np.sqrt(collection.get_sizes().max())) / 2 for collection in axes.collections
+                 if isinstance(collection, PathCollection) and len(collection.get_sizes()))
+    clearance = max(radii, default=0) * figure.dpi / 72 + 3
     legend_size = TEXT_SIZES_PT[size]["legend"]
     locations = ("upper center", "upper right", "upper left", "lower right", "lower left", "lower center", "center right", "center left")
-    for columns in range(min(3, len(handles)), 0, -1):
+    for columns in range(min(3, len(handles)), 0, -1) if placement == "auto" else ():
         for location in locations:
             legend = axes.legend(loc=location, ncol=columns, frameon=True, framealpha=1,
                                  facecolor="white", edgecolor="#777777", fontsize=legend_size)
             figure.canvas.draw()
             box = legend.get_window_extent(figure.canvas.get_renderer())
             fits = axes_box.contains(*box.p0) and axes_box.contains(*box.p1)
-            hits = int(np.count_nonzero((points[:, 0] >= box.x0 - 3) & (points[:, 0] <= box.x1 + 3)
-                                       & (points[:, 1] >= box.y0 - 3) & (points[:, 1] <= box.y1 + 3)))
+            hits = int(np.count_nonzero((points[:, 0] >= box.x0 - clearance) & (points[:, 0] <= box.x1 + clearance)
+                                       & (points[:, 1] >= box.y0 - clearance) & (points[:, 1] <= box.y1 + clearance)))
             if fits and hits == 0:
                 return
             legend.remove()
     if size == "single":
         warnings.warn("Legend moved outside the single-column plot; consider --size double to preserve plot area.",
                       stacklevel=2)
+    previous_right = figure.subplotpars.right
     figure.subplots_adjust(right=0.72)
     legend = axes.legend(loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=legend_size, frameon=True,
                          facecolor="white", edgecolor="#777777")
@@ -237,7 +262,51 @@ def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str) -> 
     box = legend.get_window_extent(figure.canvas.get_renderer())
     if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
         legend.remove()
+        figure.subplots_adjust(right=previous_right)
+        for columns in range(min(3, len(handles)), 0, -1):
+            legend = axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.985),
+                                 bbox_transform=figure.transFigure, ncol=columns, fontsize=legend_size,
+                                 frameon=True, facecolor="white", edgecolor="#777777")
+            figure.canvas.draw()
+            box = legend.get_window_extent(figure.canvas.get_renderer())
+            if (box.x0 >= 4 and box.x1 <= figure.bbox.x1 - 4 and box.height <= figure.bbox.height * .35):
+                gap = (28 if axes.get_title() else 10) * figure.dpi / 72
+                top = (box.y0 - gap) / figure.bbox.height
+                if top - figure.subplotpars.bottom >= .4:
+                    figure.subplots_adjust(top=min(figure.subplotpars.top, top))
+                    figure.canvas.draw()
+                    return
+            legend.remove()
         raise ValueError("Legend does not fit this preset; select a larger size or simplify labels.")
+
+
+def _copy_identity(source, target) -> None:
+    if isinstance(source, PathCollection):
+        target.set_sizes(source.get_sizes())
+        target.set_facecolor(source.get_facecolor())
+        target.set_edgecolor(source.get_edgecolor())
+        target.set_linewidth(source.get_linewidth())
+        target.set_alpha(source.get_alpha())
+    else:
+        target.set_color(source.get_color())
+        target.set_linestyle(getattr(source, "_scientific_linestyle", source.get_linestyle()))
+        target.set_linewidth(source.get_linewidth())
+        target.set_marker(source.get_marker())
+        target.set_markersize(source.get_markersize())
+        target.set_markerfacecolor(source.get_markerfacecolor())
+        target.set_markeredgecolor(source.get_markeredgecolor())
+        target.set_markeredgewidth(source.get_markeredgewidth())
+
+
+def _sync_legend(axes) -> None:
+    legend = axes.get_legend()
+    if legend is None:
+        return
+    handles, _ = axes.get_legend_handles_labels()
+    for source, target in zip(handles, legend.legend_handles):
+        _copy_identity(source, target)
+        if isinstance(source, PathCollection):
+            target.set_sizes(source.get_sizes()[:1])
 
 
 def _check_text_layout(figure: mpl.figure.Figure) -> None:
@@ -245,16 +314,138 @@ def _check_text_layout(figure: mpl.figure.Figure) -> None:
     renderer = figure.canvas.get_renderer()
     for panel_axes in figure.axes:
         text_items = [panel_axes.title, panel_axes.xaxis.label, panel_axes.yaxis.label]
+        legend = panel_axes.get_legend()
+        if legend is not None:
+            box = legend.get_window_extent(renderer)
+            if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
+                raise ValueError("Legend is clipped by this size preset.")
         for axis, limits in ((panel_axes.xaxis, panel_axes.get_xlim()),
                              (panel_axes.yaxis, panel_axes.get_ylim())):
             low, high = sorted(limits)
-            text_items.extend(tick.label1 for tick in axis.get_major_ticks() if low <= tick.get_loc() <= high)
+            text_items.append(axis.get_offset_text())
+            text_items.extend(tick.label1 for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())
+                              if low <= tick.get_loc() <= high)
         for text_item in text_items:
             if not text_item.get_visible() or not text_item.get_text():
                 continue
             box = text_item.get_window_extent(renderer)
             if not (figure.bbox.contains(*box.p0) and figure.bbox.contains(*box.p1)):
                 raise ValueError("A label is clipped by this size preset; use a larger preset or shorter labels.")
+
+
+def _series_options(values: list, kind: str, series_styles: dict | None,
+                    line_width: float | None, marker_size: float | None) -> dict:
+    if series_styles is not None and not isinstance(series_styles, dict):
+        raise ValueError("series_styles must map string series labels to style objects.")
+    styles = series_styles or {}
+    labels = {label for label, _ in values}
+    if len(labels) != len(values):
+        raise ValueError("Series labels are ambiguous after string conversion; use unique string labels.")
+    if styles.keys() - labels:
+        raise ValueError(f"Unknown series_styles labels: {styles.keys() - labels}")
+    if kind == "mixed" and styles.keys() != labels:
+        raise ValueError("mixed requires an explicit kind for every series in series_styles.")
+    result = {}
+    for label, _ in values:
+        style = styles.get(label, {})
+        if not isinstance(style, dict) or style.keys() - {"kind", "linestyle", "marker", "color", "line_width", "marker_size"}:
+            raise ValueError(f"Invalid style keys for series {label!r}.")
+        series_kind = style.get("kind", kind)
+        if series_kind not in SERIES_KINDS or (kind != "mixed" and series_kind != kind):
+            raise ValueError("Per-series kind changes require kind='mixed'; native kinds keep their semantics.")
+        if series_kind == "line" and "marker" in style:
+            raise ValueError("line series cannot specify a marker; use point-line or mixed explicitly.")
+        if series_kind != "scatter" and style.get("linestyle", "-") in (None, "", "None", "none", " "):
+            raise ValueError("Connected series require a visible linestyle.")
+        if series_kind != "line" and style.get("marker", "o") in (None, "", "None", "none", " "):
+            raise ValueError("point-line and scatter require visible markers.")
+        if series_kind == "scatter" and "linestyle" in style:
+            raise ValueError("scatter series cannot specify a connecting linestyle.")
+        for key, maximum, applicable in (("line_width", 8, series_kind != "scatter"),
+                                          ("marker_size", 20, series_kind != "line")):
+            override = style.get(key)
+            if override is not None and (not applicable or not isinstance(override, (int, float))
+                                         or not np.isfinite(override) or not 0 < override <= maximum):
+                raise ValueError(f"Invalid {key} for series {label!r}; maximum is {maximum} pt.")
+        result[label] = {**style, "kind": series_kind,
+                         "line_width": style.get("line_width", line_width),
+                         "marker_size": style.get("marker_size", marker_size)}
+        if isinstance(style.get("linestyle"), list):
+            if len(style["linestyle"]) != 2 or not isinstance(style["linestyle"][1], list):
+                raise ValueError("JSON dash patterns must be [offset, [on, off, ...]] in points.")
+            result[label]["linestyle"] = (style["linestyle"][0], tuple(style["linestyle"][1]))
+    return result
+
+
+def _draw_series(axes, x_values, y_values, label, style, index, color):
+    series_kind = style["kind"]
+    color = style.get("color", color)
+    marker = style.get("marker", MARKERS[index % len(MARKERS)])
+    if series_kind == "scatter":
+        artist = axes.scatter(x_values, y_values, label=label or None, s=24, marker=marker,
+                              color=color, edgecolor="#333333", linewidth=0.35, zorder=3)
+    else:
+        linestyle = (LINESTYLES[(index // len(MARKERS)) % len(LINESTYLES)]
+                     if series_kind == "point-line" else LINESTYLES[index % len(LINESTYLES)])
+        linestyle = style.get("linestyle", linestyle)
+        artist, = axes.plot(x_values, y_values, label=label or None, color=color,
+                            linestyle=linestyle, linewidth=1.5,
+                            marker=marker if series_kind == "point-line" else None,
+                            markersize=3.5, markerfacecolor="white", markeredgewidth=0.9)
+        artist._scientific_linestyle = linestyle
+    artist._scientific_style = style
+    return artist
+
+
+def _comparison_errors(values: list, x: str, y: str, error: dict | None) -> tuple[list, dict]:
+    if error is None:
+        return [], {}
+    if not isinstance(error, dict) or error.keys() - {"reference", "definition", "interpolation", "zero_reference", "ylabel"}:
+        raise ValueError("error must specify reference, definition and optional interpolation/zero_reference.")
+    reference = error.get("reference")
+    definition = error.get("definition")
+    interpolation = error.get("interpolation", "none")
+    if definition not in ("signed", "absolute", "relative") or interpolation not in ("none", "linear"):
+        raise ValueError("error definition must be signed/absolute/relative; interpolation must be none/linear.")
+    if error.get("zero_reference", "raise") != "raise":
+        raise ValueError("The only zero_reference policy is 'raise'; no zero values are omitted or replaced.")
+    groups = dict(values)
+    if reference not in groups or len(groups) < 2:
+        raise ValueError("error reference must name a plotted series with at least one comparison series.")
+    ref_x, ref_y = _numeric(groups[reference], x), _numeric(groups[reference], y)
+    comparisons = []
+    records = []
+    for label, subset in values:
+        if label == reference:
+            continue
+        coordinates, observed = _numeric(subset, x), _numeric(subset, y)
+        method = "exact"
+        if np.array_equal(coordinates, ref_x):
+            expected = ref_y
+        elif interpolation == "none":
+            raise ValueError(f"Coordinate mismatch for {label!r}; explicitly request interpolation='linear' if appropriate.")
+        else:
+            if len(ref_x) < 2 or not (np.diff(ref_x) > 0).all():
+                raise ValueError("Linear interpolation requires strictly increasing unique reference coordinates; no sorting is applied.")
+            if (coordinates < ref_x[0]).any() or (coordinates > ref_x[-1]).any():
+                raise ValueError("Interpolation would extrapolate beyond reference coordinates; refused.")
+            expected = np.interp(coordinates, ref_x, ref_y)
+            method = "linear (data coordinates; no extrapolation)"
+        differences = observed - expected
+        if definition == "absolute":
+            differences = np.abs(differences)
+        elif definition == "relative":
+            if (expected == 0).any():
+                raise ValueError(f"Relative error for {label!r} has a zero reference value; zero_reference='raise'.")
+            differences = differences / np.abs(expected)
+        if not np.isfinite(differences).all():
+            raise ValueError("Computed error contains non-finite values; refused.")
+        comparisons.append((label, coordinates, differences))
+        records.append({"series": label, "method": method, "x": coordinates.tolist(), "error": differences.tolist()})
+    formula = {"signed": "y - reference", "absolute": "abs(y - reference)",
+               "relative": "(y - reference) / abs(reference)"}[definition]
+    return comparisons, {"reference": reference, "definition": definition, "formula": formula,
+                         "interpolation": interpolation, "zero_reference": "raise", "comparisons": records}
 
 
 def render_plot(
@@ -276,21 +467,44 @@ def render_plot(
     dpi: int = 300,
     line_width: float | None = None,
     marker_size: float | None = None,
+    xscale: str = "linear",
+    yscale: str = "linear",
+    series_styles: dict | None = None,
+    error: dict | None = None,
+    legend: str = "auto",
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or size not in SIZES_MM or group_kind not in ("auto", "ordered", "categorical"):
         raise ValueError("Unknown plot kind, size or group kind.")
+    if xscale not in ("linear", "log") or yscale not in ("linear", "log"):
+        raise ValueError("xscale and yscale must be linear or log.")
+    if legend not in ("auto", "outside"):
+        raise ValueError("legend must be auto or outside.")
+    if error is not None and kind not in (*SERIES_KINDS, "mixed"):
+        raise ValueError("Error panels require line, point-line, scatter or mixed.")
+    if kind not in (*SERIES_KINDS, "mixed") and (xscale != "linear" or yscale != "linear" or series_styles is not None):
+        raise ValueError("Axis scales and series_styles apply to line, point-line, scatter and mixed only.")
     chosen_formats = tuple(dict.fromkeys(formats if formats is not None else ("png",)))
     if not chosen_formats or any(format_name not in FORMATS for format_name in chosen_formats):
         raise ValueError(f"Formats must be drawn from {FORMATS}.")
     if not 72 <= dpi <= 1200:
         raise ValueError("DPI must be between 72 and 1200.")
-    for label, override, allowed, maximum in (("line_width", line_width, ("point-line", "line"), 8),
-                                             ("marker_size", marker_size, ("point-line", "scatter"), 20)):
+    for label, override, allowed, maximum in (("line_width", line_width, ("point-line", "line", "mixed"), 8),
+                                             ("marker_size", marker_size, ("point-line", "scatter", "mixed"), 20)):
         if override is not None and (kind not in allowed or not np.isfinite(override) or not 0 < override <= maximum):
             raise ValueError(f"{label} must be a positive finite value up to {maximum} for {allowed}.")
     face = resolve_font(font)
     frame = _frame(data, kind)
+    if kind in (*SERIES_KINDS, "mixed"):
+        _required(frame, x, y)
+        for column, scale in ((x, xscale), (y, yscale)):
+            numeric = _numeric(frame, column)
+            if scale == "log" and np.any(numeric <= 0):
+                raise ValueError(f"Log axis column {column!r} contains non-positive values; no rows were removed.")
+        ordered = _ordered_groups(frame, group, group_kind)
+        values = _groups(frame, group, ordered)
+        styles = _series_options(values, kind, series_styles, line_width, marker_size)
+        comparisons, error_metadata = _comparison_errors(values, x, y, error)
     text_sizes = TEXT_SIZES_PT[size]
     with mpl.rc_context({"font.family": face, "font.size": text_sizes["tick"],
                          "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
@@ -298,30 +512,39 @@ def render_plot(
                          "svg.fonttype": "none", "pdf.fonttype": 42, "ps.fonttype": 42,
                          "savefig.facecolor": "white"}):
         width_mm, height_mm = SIZES_MM[size]
-        figure, axes = plt.subplots(figsize=(width_mm / 25.4, height_mm / 25.4), dpi=120)
+        figure, panels = plt.subplots(2 if error is not None else 1, sharex=error is not None,
+                                      figsize=(width_mm / 25.4, height_mm / 25.4), dpi=120,
+                                      gridspec_kw={"height_ratios": [2.4, 1]} if error is not None else None)
+        axes = panels[0] if error is not None else panels
+        error_axes = panels[1] if error is not None else None
+        figure.scientific_metadata = {"xscale": xscale, "yscale": yscale, "error": error_metadata if error is not None else None}
+        figure.scientific_error_axes = error_axes
+        axes.set_xscale(xscale)
+        axes.set_yscale(yscale)
         _style_axes(axes, kind)
-        if kind in ("point-line", "line", "scatter", "bar"):
+        artists = {}
+        error_artists = {}
+        if kind in ("point-line", "line", "scatter", "bar", "mixed"):
             _required(frame, x, y)
-            if kind in ("point-line", "line", "scatter"):
+            if kind in (*SERIES_KINDS, "mixed"):
                 ordered = _ordered_groups(frame, group, group_kind)
                 values = _groups(frame, group, ordered)
-                limit = len(MARKERS) * len(LINESTYLES) if kind == "point-line" else len(LINESTYLES)
+                limit = len(MARKERS) * len(LINESTYLES) if kind in ("point-line", "mixed") else len(LINESTYLES)
                 if len(values) > limit:
                     raise ValueError("Too many series to distinguish in grayscale; divide them into panels.")
                 palette = _palette(len(values), ordered)
                 for index, (label, subset) in enumerate(values):
                     x_values, y_values = _numeric(subset, x), _numeric(subset, y)
-                    if kind == "scatter":
-                        axes.scatter(x_values, y_values, label=label or None, s=24,
-                                     marker=MARKERS[index % len(MARKERS)], color=palette[index],
-                                     edgecolor="#333333", linewidth=0.35)
-                    else:
-                        linestyle = (LINESTYLES[(index // len(MARKERS)) % len(LINESTYLES)]
-                                     if kind == "point-line" else LINESTYLES[index])
-                        axes.plot(x_values, y_values, label=label or None, color=palette[index],
-                                  linestyle=linestyle, linewidth=1.5,
-                                  marker=MARKERS[index % len(MARKERS)] if kind == "point-line" else None,
-                                  markersize=3.5, markerfacecolor="white", markeredgewidth=0.9)
+                    artists[label] = _draw_series(axes, x_values, y_values, label, styles[label], index, palette[index])
+                if error_axes is not None:
+                    error_axes.set_xscale(xscale)
+                    _style_axes(error_axes, kind)
+                    for label, coordinates, differences in comparisons:
+                        index = next(index for index, (name, _) in enumerate(values) if name == label)
+                        error_artists[label] = _draw_series(error_axes, coordinates, differences, label,
+                                                           styles[label], index, palette[index])
+                    error_axes.set_ylabel(error.get("ylabel", {"signed": "Signed error", "absolute": "Absolute error",
+                                                               "relative": "Relative error (-)"}[error_metadata["definition"]]))
             else:
                 _numeric(frame, y)
                 ordered = _ordered_groups(frame, group, group_kind)
@@ -380,19 +603,36 @@ def render_plot(
             for key in ("cbars", "cmins", "cmaxes"):
                 parts[key].set_color("#333333")
             axes.set_xticks(np.arange(1, len(categories) + 1), [str(category) for category in categories])
-        axes.set_xlabel(xlabel if xlabel is not None else (x or ""))
+        label_axes = error_axes if error_axes is not None else axes
+        label_axes.set_xlabel(xlabel if xlabel is not None else (x or ""))
         axes.set_ylabel(ylabel if ylabel is not None else (y or value or ""))
         if title:
             axes.set_title(title)
         figure.tight_layout(pad=1.0)
-        if kind in ("point-line", "line", "scatter"):
+        if kind in (*SERIES_KINDS, "mixed"):
             margins = figure.subplotpars
             figure.subplots_adjust(left=max(0.135, margins.left), right=min(0.91, margins.right),
                                    bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
         figure.canvas.draw()
         _adapt_strokes(axes, kind, line_width, marker_size)
-        _place_legend(figure, axes, size)
-        _hide_edge_grids(axes)
+        _place_legend(figure, axes, size, legend)
+        figure.canvas.draw()
+        for panel_axes in figure.axes:
+            _adapt_log_ticks(panel_axes)
+        figure.canvas.draw()
+        _adapt_strokes(axes, kind, line_width, marker_size)
+        for label, artist in error_artists.items():
+            _copy_identity(artists[label], artist)
+        _sync_legend(axes)
+        if artists:
+            figure.scientific_metadata["series"] = {
+                label: {"kind": styles[label]["kind"],
+                        "line_width_pt": None if isinstance(artist, PathCollection) else artist.get_linewidth(),
+                        "marker_size_pt": float(np.sqrt(artist.get_sizes()[0])) if isinstance(artist, PathCollection)
+                        else artist.get_markersize() if styles[label]["kind"] == "point-line" else None}
+                for label, artist in artists.items()}
+        for panel_axes in figure.axes:
+            _hide_edge_grids(panel_axes)
         _check_text_layout(figure)
         exported = []
         if output is not None:
@@ -404,6 +644,9 @@ def render_plot(
                 destination = target.with_suffix(f".{format_name}")
                 figure.savefig(destination, format=format_name, dpi=dpi, facecolor="white")
                 exported.append(destination)
+            if error is not None:
+                target.with_name(target.stem + "_metadata.json").write_text(
+                    json.dumps(figure.scientific_metadata, indent=2) + "\n", encoding="utf-8")
         return figure, axes, exported
 
 
@@ -440,11 +683,32 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--line-width", type=float, help="Line stroke width in points (line and point-line)")
     parser.add_argument("--marker-size", type=float, help="Marker diameter in points (point-line and scatter)")
+    parser.add_argument("--xscale", choices=("linear", "log"), default="linear")
+    parser.add_argument("--yscale", choices=("linear", "log"), default="linear")
+    parser.add_argument("--series-config", type=Path, help="JSON mapping of string series labels to styles; mixed requires kind for each")
+    parser.add_argument("--legend", choices=("auto", "outside"), default="auto")
+    parser.add_argument("--error-reference", help="Reference series label; adds a shared-x, linear-y error panel")
+    parser.add_argument("--error-definition", choices=("signed", "absolute", "relative"))
+    parser.add_argument("--error-interpolation", choices=("none", "linear"), default="none")
+    parser.add_argument("--error-ylabel", help="Error-axis label, including original y units for signed/absolute error")
+    parser.add_argument("--zero-reference", choices=("raise",), default="raise")
     parser.add_argument("--sheet", default="0", help="Excel sheet name or zero-based number")
     parser.add_argument("--index-col", help="Matrix heatmap row-label column")
     parser.add_argument("--output", type=Path, required=True, help="Output basename; suffix does not override --format")
     parser.add_argument("--no-script", action="store_true", help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
+    if bool(options.error_reference is not None) != bool(options.error_definition is not None):
+        parser.error("--error-reference and --error-definition must be supplied together")
+    error = ({"reference": options.error_reference, "definition": options.error_definition,
+              "interpolation": options.error_interpolation, "zero_reference": options.zero_reference}
+             if options.error_reference is not None else None)
+    if options.error_ylabel is not None:
+        if error is None:
+            parser.error("--error-ylabel requires --error-reference and --error-definition")
+        error["ylabel"] = options.error_ylabel
+    if error is None and options.error_interpolation != "none":
+        parser.error("--error-interpolation requires --error-reference and --error-definition")
+    series_styles = json.loads(options.series_config.read_text(encoding="utf-8")) if options.series_config else None
     source = options.input.resolve()
     if source.suffix.lower() == ".csv":
         frame = pd.read_csv(source, index_col=options.index_col)
@@ -459,6 +723,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         ylabel=options.ylabel, title=options.title, font=options.font, size=options.size,
         output=options.output, formats=options.formats, dpi=options.dpi,
         line_width=options.line_width, marker_size=options.marker_size,
+        xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
+        error=error, legend=options.legend,
     )
     plt.close(figure)
     if not options.no_script:
@@ -466,6 +732,10 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         original_args[original_args.index("--input") + 1] = str(source)
         original_args[original_args.index("--output") + 1] = str(options.output.resolve())
         target = paths[0].with_suffix("")
+        if options.series_config:
+            config_path = target.with_name(target.stem + "_series.json")
+            config_path.write_text(json.dumps(series_styles, indent=2) + "\n", encoding="utf-8")
+            original_args[original_args.index("--series-config") + 1] = str(config_path.resolve())
         _source_script(target, original_args)
     return paths
 

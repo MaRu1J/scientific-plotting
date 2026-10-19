@@ -1,0 +1,34 @@
+{
+  "kind": "mixed",
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "size": "single",
+  "series_styles": {
+    "Theory": {
+      "kind": "line",
+      "linestyle": "-"
+    },
+    "Coarse (synth.)": {
+      "kind": "line",
+      "linestyle": "--"
+    },
+    "Fine (synth.)": {
+      "kind": "point-line",
+      "marker": "D",
+      "linestyle": "-."
+    },
+    "Samples (synth.)": {
+      "kind": "scatter",
+      "marker": "^"
+    }
+  },
+  "error": {
+    "reference": "Theory",
+    "definition": "signed",
+    "interpolation": "linear"
+  },
+  "xlabel": "Radius, r/R",
+  "ylabel": "Velocity, u/Ub"
+}

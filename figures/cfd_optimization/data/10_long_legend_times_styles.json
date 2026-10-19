@@ -1,0 +1,24 @@
+{
+  "Hagen-Poiseuille theoretical reference": {
+    "kind": "line",
+    "linestyle": "-",
+    "line_width": 1.8
+  },
+  "Coarse-grid numerical illustration (synthetic)": {
+    "kind": "line",
+    "linestyle": "--",
+    "line_width": 1.8
+  },
+  "Fine-grid numerical illustration (synthetic)": {
+    "kind": "point-line",
+    "marker": "D",
+    "linestyle": "-.",
+    "line_width": 1.8,
+    "marker_size": 4
+  },
+  "Measurement illustration (synthetic)": {
+    "kind": "scatter",
+    "marker": "^",
+    "marker_size": 4
+  }
+}

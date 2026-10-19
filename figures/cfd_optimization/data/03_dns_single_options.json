@@ -1,0 +1,11 @@
+{
+  "kind": "line",
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "size": "single",
+  "xscale": "log",
+  "xlabel": "Wall distance, $y^+$",
+  "ylabel": "Mean velocity, $u^+$"
+}

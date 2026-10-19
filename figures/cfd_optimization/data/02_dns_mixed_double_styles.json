@@ -1,0 +1,14 @@
+{
+  "DNS 180 (4th)": {
+    "kind": "point-line",
+    "marker": "o"
+  },
+  "DNS 180 (2nd)": {
+    "kind": "scatter",
+    "marker": "s"
+  },
+  "Viscous law": {
+    "kind": "line",
+    "linestyle": "--"
+  }
+}

@@ -1,0 +1,465 @@
+x,y,series
+0.0,2.0,Hagen-Poiseuille theoretical reference
+0.005,1.99995,Hagen-Poiseuille theoretical reference
+0.01,1.9998,Hagen-Poiseuille theoretical reference
+0.015,1.99955,Hagen-Poiseuille theoretical reference
+0.02,1.9992,Hagen-Poiseuille theoretical reference
+0.025,1.99875,Hagen-Poiseuille theoretical reference
+0.03,1.9982,Hagen-Poiseuille theoretical reference
+0.035,1.99755,Hagen-Poiseuille theoretical reference
+0.04,1.9968,Hagen-Poiseuille theoretical reference
+0.045,1.99595,Hagen-Poiseuille theoretical reference
+0.05,1.995,Hagen-Poiseuille theoretical reference
+0.055,1.99395,Hagen-Poiseuille theoretical reference
+0.06,1.9928,Hagen-Poiseuille theoretical reference
+0.065,1.99155,Hagen-Poiseuille theoretical reference
+0.07,1.9902,Hagen-Poiseuille theoretical reference
+0.075,1.98875,Hagen-Poiseuille theoretical reference
+0.08,1.9872,Hagen-Poiseuille theoretical reference
+0.085,1.98555,Hagen-Poiseuille theoretical reference
+0.09,1.9838,Hagen-Poiseuille theoretical reference
+0.095,1.98195,Hagen-Poiseuille theoretical reference
+0.1,1.98,Hagen-Poiseuille theoretical reference
+0.105,1.97795,Hagen-Poiseuille theoretical reference
+0.11,1.9758,Hagen-Poiseuille theoretical reference
+0.115,1.97355,Hagen-Poiseuille theoretical reference
+0.12,1.9712,Hagen-Poiseuille theoretical reference
+0.125,1.96875,Hagen-Poiseuille theoretical reference
+0.13,1.9662,Hagen-Poiseuille theoretical reference
+0.135,1.96355,Hagen-Poiseuille theoretical reference
+0.14,1.9608,Hagen-Poiseuille theoretical reference
+0.145,1.95795,Hagen-Poiseuille theoretical reference
+0.15,1.955,Hagen-Poiseuille theoretical reference
+0.155,1.95195,Hagen-Poiseuille theoretical reference
+0.16,1.9488,Hagen-Poiseuille theoretical reference
+0.165,1.94555,Hagen-Poiseuille theoretical reference
+0.17,1.9422,Hagen-Poiseuille theoretical reference
+0.17500000000000002,1.93875,Hagen-Poiseuille theoretical reference
+0.18,1.9352,Hagen-Poiseuille theoretical reference
+0.185,1.93155,Hagen-Poiseuille theoretical reference
+0.19,1.9278,Hagen-Poiseuille theoretical reference
+0.195,1.92395,Hagen-Poiseuille theoretical reference
+0.2,1.92,Hagen-Poiseuille theoretical reference
+0.20500000000000002,1.91595,Hagen-Poiseuille theoretical reference
+0.21,1.9118,Hagen-Poiseuille theoretical reference
+0.215,1.90755,Hagen-Poiseuille theoretical reference
+0.22,1.9032,Hagen-Poiseuille theoretical reference
+0.225,1.89875,Hagen-Poiseuille theoretical reference
+0.23,1.8942,Hagen-Poiseuille theoretical reference
+0.23500000000000001,1.88955,Hagen-Poiseuille theoretical reference
+0.24,1.8848,Hagen-Poiseuille theoretical reference
+0.245,1.87995,Hagen-Poiseuille theoretical reference
+0.25,1.875,Hagen-Poiseuille theoretical reference
+0.255,1.86995,Hagen-Poiseuille theoretical reference
+0.26,1.8648,Hagen-Poiseuille theoretical reference
+0.265,1.85955,Hagen-Poiseuille theoretical reference
+0.27,1.8542,Hagen-Poiseuille theoretical reference
+0.275,1.84875,Hagen-Poiseuille theoretical reference
+0.28,1.8432,Hagen-Poiseuille theoretical reference
+0.28500000000000003,1.83755,Hagen-Poiseuille theoretical reference
+0.29,1.8318,Hagen-Poiseuille theoretical reference
+0.295,1.82595,Hagen-Poiseuille theoretical reference
+0.3,1.82,Hagen-Poiseuille theoretical reference
+0.305,1.81395,Hagen-Poiseuille theoretical reference
+0.31,1.8078,Hagen-Poiseuille theoretical reference
+0.315,1.80155,Hagen-Poiseuille theoretical reference
+0.32,1.7952,Hagen-Poiseuille theoretical reference
+0.325,1.78875,Hagen-Poiseuille theoretical reference
+0.33,1.7822,Hagen-Poiseuille theoretical reference
+0.335,1.77555,Hagen-Poiseuille theoretical reference
+0.34,1.7688,Hagen-Poiseuille theoretical reference
+0.34500000000000003,1.76195,Hagen-Poiseuille theoretical reference
+0.35000000000000003,1.755,Hagen-Poiseuille theoretical reference
+0.355,1.74795,Hagen-Poiseuille theoretical reference
+0.36,1.7408000000000001,Hagen-Poiseuille theoretical reference
+0.365,1.7335500000000001,Hagen-Poiseuille theoretical reference
+0.37,1.7262,Hagen-Poiseuille theoretical reference
+0.375,1.71875,Hagen-Poiseuille theoretical reference
+0.38,1.7112,Hagen-Poiseuille theoretical reference
+0.385,1.70355,Hagen-Poiseuille theoretical reference
+0.39,1.6958,Hagen-Poiseuille theoretical reference
+0.395,1.6879499999999998,Hagen-Poiseuille theoretical reference
+0.4,1.68,Hagen-Poiseuille theoretical reference
+0.405,1.6719499999999998,Hagen-Poiseuille theoretical reference
+0.41000000000000003,1.6638,Hagen-Poiseuille theoretical reference
+0.41500000000000004,1.6555499999999999,Hagen-Poiseuille theoretical reference
+0.42,1.6472,Hagen-Poiseuille theoretical reference
+0.425,1.63875,Hagen-Poiseuille theoretical reference
+0.43,1.6302,Hagen-Poiseuille theoretical reference
+0.435,1.62155,Hagen-Poiseuille theoretical reference
+0.44,1.6128,Hagen-Poiseuille theoretical reference
+0.445,1.60395,Hagen-Poiseuille theoretical reference
+0.45,1.595,Hagen-Poiseuille theoretical reference
+0.455,1.58595,Hagen-Poiseuille theoretical reference
+0.46,1.5768,Hagen-Poiseuille theoretical reference
+0.465,1.56755,Hagen-Poiseuille theoretical reference
+0.47000000000000003,1.5581999999999998,Hagen-Poiseuille theoretical reference
+0.47500000000000003,1.54875,Hagen-Poiseuille theoretical reference
+0.48,1.5392000000000001,Hagen-Poiseuille theoretical reference
+0.485,1.52955,Hagen-Poiseuille theoretical reference
+0.49,1.5198,Hagen-Poiseuille theoretical reference
+0.495,1.50995,Hagen-Poiseuille theoretical reference
+0.5,1.5,Hagen-Poiseuille theoretical reference
+0.505,1.4899499999999999,Hagen-Poiseuille theoretical reference
+0.51,1.4798,Hagen-Poiseuille theoretical reference
+0.515,1.46955,Hagen-Poiseuille theoretical reference
+0.52,1.4592,Hagen-Poiseuille theoretical reference
+0.525,1.44875,Hagen-Poiseuille theoretical reference
+0.53,1.4382,Hagen-Poiseuille theoretical reference
+0.535,1.42755,Hagen-Poiseuille theoretical reference
+0.54,1.4167999999999998,Hagen-Poiseuille theoretical reference
+0.545,1.4059499999999998,Hagen-Poiseuille theoretical reference
+0.55,1.395,Hagen-Poiseuille theoretical reference
+0.555,1.38395,Hagen-Poiseuille theoretical reference
+0.56,1.3727999999999998,Hagen-Poiseuille theoretical reference
+0.5650000000000001,1.3615499999999998,Hagen-Poiseuille theoretical reference
+0.5700000000000001,1.3501999999999998,Hagen-Poiseuille theoretical reference
+0.5750000000000001,1.3387499999999999,Hagen-Poiseuille theoretical reference
+0.58,1.3272,Hagen-Poiseuille theoretical reference
+0.585,1.31555,Hagen-Poiseuille theoretical reference
+0.59,1.3038,Hagen-Poiseuille theoretical reference
+0.595,1.29195,Hagen-Poiseuille theoretical reference
+0.6,1.28,Hagen-Poiseuille theoretical reference
+0.605,1.26795,Hagen-Poiseuille theoretical reference
+0.61,1.2558,Hagen-Poiseuille theoretical reference
+0.615,1.24355,Hagen-Poiseuille theoretical reference
+0.62,1.2311999999999999,Hagen-Poiseuille theoretical reference
+0.625,1.21875,Hagen-Poiseuille theoretical reference
+0.63,1.2062,Hagen-Poiseuille theoretical reference
+0.635,1.19355,Hagen-Poiseuille theoretical reference
+0.64,1.1808,Hagen-Poiseuille theoretical reference
+0.645,1.1679499999999998,Hagen-Poiseuille theoretical reference
+0.65,1.1549999999999998,Hagen-Poiseuille theoretical reference
+0.655,1.14195,Hagen-Poiseuille theoretical reference
+0.66,1.1288,Hagen-Poiseuille theoretical reference
+0.665,1.1155499999999998,Hagen-Poiseuille theoretical reference
+0.67,1.1021999999999998,Hagen-Poiseuille theoretical reference
+0.675,1.0887499999999999,Hagen-Poiseuille theoretical reference
+0.68,1.0751999999999997,Hagen-Poiseuille theoretical reference
+0.685,1.06155,Hagen-Poiseuille theoretical reference
+0.6900000000000001,1.0477999999999998,Hagen-Poiseuille theoretical reference
+0.6950000000000001,1.03395,Hagen-Poiseuille theoretical reference
+0.7000000000000001,1.0199999999999998,Hagen-Poiseuille theoretical reference
+0.705,1.0059500000000001,Hagen-Poiseuille theoretical reference
+0.71,0.9918,Hagen-Poiseuille theoretical reference
+0.715,0.9775500000000001,Hagen-Poiseuille theoretical reference
+0.72,0.9632000000000001,Hagen-Poiseuille theoretical reference
+0.725,0.94875,Hagen-Poiseuille theoretical reference
+0.73,0.9342000000000001,Hagen-Poiseuille theoretical reference
+0.735,0.9195500000000001,Hagen-Poiseuille theoretical reference
+0.74,0.9048,Hagen-Poiseuille theoretical reference
+0.745,0.88995,Hagen-Poiseuille theoretical reference
+0.75,0.875,Hagen-Poiseuille theoretical reference
+0.755,0.85995,Hagen-Poiseuille theoretical reference
+0.76,0.8448,Hagen-Poiseuille theoretical reference
+0.765,0.82955,Hagen-Poiseuille theoretical reference
+0.77,0.8142,Hagen-Poiseuille theoretical reference
+0.775,0.7987499999999998,Hagen-Poiseuille theoretical reference
+0.78,0.7831999999999999,Hagen-Poiseuille theoretical reference
+0.785,0.76755,Hagen-Poiseuille theoretical reference
+0.79,0.7517999999999998,Hagen-Poiseuille theoretical reference
+0.795,0.7359499999999999,Hagen-Poiseuille theoretical reference
+0.8,0.7199999999999998,Hagen-Poiseuille theoretical reference
+0.805,0.7039499999999999,Hagen-Poiseuille theoretical reference
+0.81,0.6877999999999997,Hagen-Poiseuille theoretical reference
+0.8150000000000001,0.6715499999999999,Hagen-Poiseuille theoretical reference
+0.8200000000000001,0.6551999999999998,Hagen-Poiseuille theoretical reference
+0.8250000000000001,0.6387499999999997,Hagen-Poiseuille theoretical reference
+0.8300000000000001,0.6221999999999999,Hagen-Poiseuille theoretical reference
+0.835,0.60555,Hagen-Poiseuille theoretical reference
+0.84,0.5888000000000002,Hagen-Poiseuille theoretical reference
+0.845,0.5719500000000002,Hagen-Poiseuille theoretical reference
+0.85,0.5550000000000002,Hagen-Poiseuille theoretical reference
+0.855,0.5379500000000002,Hagen-Poiseuille theoretical reference
+0.86,0.5208000000000002,Hagen-Poiseuille theoretical reference
+0.865,0.5035499999999999,Hagen-Poiseuille theoretical reference
+0.87,0.48619999999999997,Hagen-Poiseuille theoretical reference
+0.875,0.46875,Hagen-Poiseuille theoretical reference
+0.88,0.45120000000000005,Hagen-Poiseuille theoretical reference
+0.885,0.4335499999999999,Hagen-Poiseuille theoretical reference
+0.89,0.41579999999999995,Hagen-Poiseuille theoretical reference
+0.895,0.39795,Hagen-Poiseuille theoretical reference
+0.9,0.3799999999999999,Hagen-Poiseuille theoretical reference
+0.905,0.36195,Hagen-Poiseuille theoretical reference
+0.91,0.3437999999999999,Hagen-Poiseuille theoretical reference
+0.915,0.3255499999999998,Hagen-Poiseuille theoretical reference
+0.92,0.3071999999999999,Hagen-Poiseuille theoretical reference
+0.925,0.28874999999999984,Hagen-Poiseuille theoretical reference
+0.93,0.2701999999999998,Hagen-Poiseuille theoretical reference
+0.935,0.2515499999999997,Hagen-Poiseuille theoretical reference
+0.9400000000000001,0.23279999999999967,Hagen-Poiseuille theoretical reference
+0.9450000000000001,0.21394999999999986,Hagen-Poiseuille theoretical reference
+0.9500000000000001,0.19499999999999984,Hagen-Poiseuille theoretical reference
+0.9550000000000001,0.17594999999999983,Hagen-Poiseuille theoretical reference
+0.96,0.15680000000000005,Hagen-Poiseuille theoretical reference
+0.965,0.13755000000000006,Hagen-Poiseuille theoretical reference
+0.97,0.11820000000000008,Hagen-Poiseuille theoretical reference
+0.975,0.09875000000000012,Hagen-Poiseuille theoretical reference
+0.98,0.07920000000000016,Hagen-Poiseuille theoretical reference
+0.985,0.05954999999999999,Hagen-Poiseuille theoretical reference
+0.99,0.03980000000000006,Hagen-Poiseuille theoretical reference
+0.995,0.019949999999999912,Hagen-Poiseuille theoretical reference
+1.0,0.0,Hagen-Poiseuille theoretical reference
+0.0,2.0,Coarse-grid numerical illustration (synthetic)
+0.005,1.9999500999974997,Coarse-grid numerical illustration (synthetic)
+0.01,1.9998003999599998,Coarse-grid numerical illustration (synthetic)
+0.015,1.9995508997974998,Coarse-grid numerical illustration (synthetic)
+0.02,1.99920159936,Coarse-grid numerical illustration (synthetic)
+0.025,1.9987524984375,Coarse-grid numerical illustration (synthetic)
+0.03,1.9982035967599998,Coarse-grid numerical illustration (synthetic)
+0.035,1.9975548939974999,Coarse-grid numerical illustration (synthetic)
+0.04,1.9968063897600001,Coarse-grid numerical illustration (synthetic)
+0.045,1.9959580835975,Coarse-grid numerical illustration (synthetic)
+0.05,1.995009975,Coarse-grid numerical illustration (synthetic)
+0.055,1.9939620633975002,Coarse-grid numerical illustration (synthetic)
+0.06,1.9928143481599998,Coarse-grid numerical illustration (synthetic)
+0.065,1.9915668285975,Coarse-grid numerical illustration (synthetic)
+0.07,1.99021950396,Coarse-grid numerical illustration (synthetic)
+0.075,1.9887723734375,Coarse-grid numerical illustration (synthetic)
+0.08,1.98722543616,Coarse-grid numerical illustration (synthetic)
+0.085,1.9855786911975002,Coarse-grid numerical illustration (synthetic)
+0.09,1.9838321375599999,Coarse-grid numerical illustration (synthetic)
+0.095,1.9819857741975,Coarse-grid numerical illustration (synthetic)
+0.1,1.9800395999999998,Coarse-grid numerical illustration (synthetic)
+0.105,1.9779936137975003,Coarse-grid numerical illustration (synthetic)
+0.11,1.9758478143599998,Coarse-grid numerical illustration (synthetic)
+0.115,1.9736022003975,Coarse-grid numerical illustration (synthetic)
+0.12,1.97125677056,Coarse-grid numerical illustration (synthetic)
+0.125,1.9688115234374999,Coarse-grid numerical illustration (synthetic)
+0.13,1.96626645756,Coarse-grid numerical illustration (synthetic)
+0.135,1.9636215713975,Coarse-grid numerical illustration (synthetic)
+0.14,1.9608768633600002,Coarse-grid numerical illustration (synthetic)
+0.145,1.9580323317975001,Coarse-grid numerical illustration (synthetic)
+0.15,1.9550879750000003,Coarse-grid numerical illustration (synthetic)
+0.155,1.9520437911975,Coarse-grid numerical illustration (synthetic)
+0.16,1.94889977856,Coarse-grid numerical illustration (synthetic)
+0.165,1.9456559351974998,Coarse-grid numerical illustration (synthetic)
+0.17,1.94231225916,Coarse-grid numerical illustration (synthetic)
+0.17500000000000002,1.9388687484374998,Coarse-grid numerical illustration (synthetic)
+0.18,1.9353254009600003,Coarse-grid numerical illustration (synthetic)
+0.185,1.9316822145975003,Coarse-grid numerical illustration (synthetic)
+0.19,1.9279391871599998,Coarse-grid numerical illustration (synthetic)
+0.195,1.9240963163975002,Coarse-grid numerical illustration (synthetic)
+0.2,1.9201536000000001,Coarse-grid numerical illustration (synthetic)
+0.20500000000000002,1.9161110355974997,Coarse-grid numerical illustration (synthetic)
+0.21,1.91196862076,Coarse-grid numerical illustration (synthetic)
+0.215,1.9077263529975,Coarse-grid numerical illustration (synthetic)
+0.22,1.9033842297599999,Coarse-grid numerical illustration (synthetic)
+0.225,1.8989422484374998,Coarse-grid numerical illustration (synthetic)
+0.23,1.8944004063600002,Coarse-grid numerical illustration (synthetic)
+0.23500000000000001,1.8897587007975,Coarse-grid numerical illustration (synthetic)
+0.24,1.88501712896,Coarse-grid numerical illustration (synthetic)
+0.245,1.8801756879975,Coarse-grid numerical illustration (synthetic)
+0.25,1.8752343749999998,Coarse-grid numerical illustration (synthetic)
+0.255,1.8701931869975001,Coarse-grid numerical illustration (synthetic)
+0.26,1.8650521209599997,Coarse-grid numerical illustration (synthetic)
+0.265,1.8598111737975,Coarse-grid numerical illustration (synthetic)
+0.27,1.8544703423600002,Coarse-grid numerical illustration (synthetic)
+0.275,1.8490296234374999,Coarse-grid numerical illustration (synthetic)
+0.28,1.8434890137600002,Coarse-grid numerical illustration (synthetic)
+0.28500000000000003,1.8378485099975,Coarse-grid numerical illustration (synthetic)
+0.29,1.8321081087600002,Coarse-grid numerical illustration (synthetic)
+0.295,1.8262678065975,Coarse-grid numerical illustration (synthetic)
+0.3,1.8203276000000002,Coarse-grid numerical illustration (synthetic)
+0.305,1.8142874853974997,Coarse-grid numerical illustration (synthetic)
+0.31,1.8081474591600002,Coarse-grid numerical illustration (synthetic)
+0.315,1.8019075175975001,Coarse-grid numerical illustration (synthetic)
+0.32,1.7955676569599996,Coarse-grid numerical illustration (synthetic)
+0.325,1.7891278734375,Coarse-grid numerical illustration (synthetic)
+0.33,1.7825881631599998,Coarse-grid numerical illustration (synthetic)
+0.335,1.7759485221974998,Coarse-grid numerical illustration (synthetic)
+0.34,1.7692089465599998,Coarse-grid numerical illustration (synthetic)
+0.34500000000000003,1.7623694321975,Coarse-grid numerical illustration (synthetic)
+0.35000000000000003,1.755429975,Coarse-grid numerical illustration (synthetic)
+0.355,1.7483905707975,Coarse-grid numerical illustration (synthetic)
+0.36,1.74125121536,Coarse-grid numerical illustration (synthetic)
+0.365,1.7340119043975002,Coarse-grid numerical illustration (synthetic)
+0.37,1.72667263356,Coarse-grid numerical illustration (synthetic)
+0.375,1.7192333984375001,Coarse-grid numerical illustration (synthetic)
+0.38,1.7116941945600002,Coarse-grid numerical illustration (synthetic)
+0.385,1.7040550173975,Coarse-grid numerical illustration (synthetic)
+0.39,1.6963158623599999,Coarse-grid numerical illustration (synthetic)
+0.395,1.6884767247974999,Coarse-grid numerical illustration (synthetic)
+0.4,1.6805376,Coarse-grid numerical illustration (synthetic)
+0.405,1.6724984831974998,Coarse-grid numerical illustration (synthetic)
+0.41000000000000003,1.6643593695599999,Coarse-grid numerical illustration (synthetic)
+0.41500000000000004,1.6561202541975,Coarse-grid numerical illustration (synthetic)
+0.42,1.6477811321599998,Coarse-grid numerical illustration (synthetic)
+0.425,1.6393419984375002,Coarse-grid numerical illustration (synthetic)
+0.43,1.6308028479600003,Coarse-grid numerical illustration (synthetic)
+0.435,1.6221636755975,Coarse-grid numerical illustration (synthetic)
+0.44,1.61342447616,Coarse-grid numerical illustration (synthetic)
+0.445,1.6045852443975,Coarse-grid numerical illustration (synthetic)
+0.45,1.595645975,Coarse-grid numerical illustration (synthetic)
+0.455,1.5866066625975002,Coarse-grid numerical illustration (synthetic)
+0.46,1.5774673017599998,Coarse-grid numerical illustration (synthetic)
+0.465,1.5682278869975,Coarse-grid numerical illustration (synthetic)
+0.47000000000000003,1.5588884127599998,Coarse-grid numerical illustration (synthetic)
+0.47500000000000003,1.5494488734375,Coarse-grid numerical illustration (synthetic)
+0.48,1.53990926336,Coarse-grid numerical illustration (synthetic)
+0.485,1.5302695767974999,Coarse-grid numerical illustration (synthetic)
+0.49,1.52052980796,Coarse-grid numerical illustration (synthetic)
+0.495,1.5106899509975,Coarse-grid numerical illustration (synthetic)
+0.5,1.50075,Coarse-grid numerical illustration (synthetic)
+0.505,1.4907099489974998,Coarse-grid numerical illustration (synthetic)
+0.51,1.48056979196,Coarse-grid numerical illustration (synthetic)
+0.515,1.4703295227975,Coarse-grid numerical illustration (synthetic)
+0.52,1.45998913536,Coarse-grid numerical illustration (synthetic)
+0.525,1.4495486234375,Coarse-grid numerical illustration (synthetic)
+0.53,1.43900798076,Coarse-grid numerical illustration (synthetic)
+0.535,1.4283672009975,Coarse-grid numerical illustration (synthetic)
+0.54,1.4176262777599997,Coarse-grid numerical illustration (synthetic)
+0.545,1.4067852045974998,Coarse-grid numerical illustration (synthetic)
+0.55,1.395843975,Coarse-grid numerical illustration (synthetic)
+0.555,1.3848025823975,Coarse-grid numerical illustration (synthetic)
+0.56,1.37366102016,Coarse-grid numerical illustration (synthetic)
+0.5650000000000001,1.3624192815974998,Coarse-grid numerical illustration (synthetic)
+0.5700000000000001,1.3510773599599997,Coarse-grid numerical illustration (synthetic)
+0.5750000000000001,1.3396352484375,Coarse-grid numerical illustration (synthetic)
+0.58,1.32809294016,Coarse-grid numerical illustration (synthetic)
+0.585,1.3164504281975,Coarse-grid numerical illustration (synthetic)
+0.59,1.30470770556,Coarse-grid numerical illustration (synthetic)
+0.595,1.2928647651975,Coarse-grid numerical illustration (synthetic)
+0.6,1.2809216,Coarse-grid numerical illustration (synthetic)
+0.605,1.2688782027975,Coarse-grid numerical illustration (synthetic)
+0.61,1.25673456636,Coarse-grid numerical illustration (synthetic)
+0.615,1.2444906833974998,Coarse-grid numerical illustration (synthetic)
+0.62,1.2321465465599997,Coarse-grid numerical illustration (synthetic)
+0.625,1.2197021484375,Coarse-grid numerical illustration (synthetic)
+0.63,1.20715748156,Coarse-grid numerical illustration (synthetic)
+0.635,1.1945125383975002,Coarse-grid numerical illustration (synthetic)
+0.64,1.18176731136,Coarse-grid numerical illustration (synthetic)
+0.645,1.1689217927975,Coarse-grid numerical illustration (synthetic)
+0.65,1.1559759749999998,Coarse-grid numerical illustration (synthetic)
+0.655,1.1429298501975,Coarse-grid numerical illustration (synthetic)
+0.66,1.12978341056,Coarse-grid numerical illustration (synthetic)
+0.665,1.1165366481974999,Coarse-grid numerical illustration (synthetic)
+0.67,1.1031895551599997,Coarse-grid numerical illustration (synthetic)
+0.675,1.0897421234374998,Coarse-grid numerical illustration (synthetic)
+0.68,1.0761943449599995,Coarse-grid numerical illustration (synthetic)
+0.685,1.0625462115975,Coarse-grid numerical illustration (synthetic)
+0.6900000000000001,1.0487977151599999,Coarse-grid numerical illustration (synthetic)
+0.6950000000000001,1.0349488473975,Coarse-grid numerical illustration (synthetic)
+0.7000000000000001,1.0209995999999997,Coarse-grid numerical illustration (synthetic)
+0.705,1.0069499645975002,Coarse-grid numerical illustration (synthetic)
+0.71,0.99279993276,Coarse-grid numerical illustration (synthetic)
+0.715,0.9785494959975002,Coarse-grid numerical illustration (synthetic)
+0.72,0.9641986457600001,Coarse-grid numerical illustration (synthetic)
+0.725,0.9497473734374999,Coarse-grid numerical illustration (synthetic)
+0.73,0.9351956703600001,Coarse-grid numerical illustration (synthetic)
+0.735,0.9205435277975,Coarse-grid numerical illustration (synthetic)
+0.74,0.90579093696,Coarse-grid numerical illustration (synthetic)
+0.745,0.8909378889975001,Coarse-grid numerical illustration (synthetic)
+0.75,0.875984375,Coarse-grid numerical illustration (synthetic)
+0.755,0.8609303859975,Coarse-grid numerical illustration (synthetic)
+0.76,0.8457759129599999,Coarse-grid numerical illustration (synthetic)
+0.765,0.8305209467975,Coarse-grid numerical illustration (synthetic)
+0.77,0.8151654783600001,Coarse-grid numerical illustration (synthetic)
+0.775,0.7997094984374998,Coarse-grid numerical illustration (synthetic)
+0.78,0.7841529977599998,Coarse-grid numerical illustration (synthetic)
+0.785,0.7684959669975,Coarse-grid numerical illustration (synthetic)
+0.79,0.7527383967599999,Coarse-grid numerical illustration (synthetic)
+0.795,0.7368802775975,Coarse-grid numerical illustration (synthetic)
+0.8,0.7209215999999997,Coarse-grid numerical illustration (synthetic)
+0.805,0.7048623543974999,Coarse-grid numerical illustration (synthetic)
+0.81,0.6887025311599998,Coarse-grid numerical illustration (synthetic)
+0.8150000000000001,0.6724421205974999,Coarse-grid numerical illustration (synthetic)
+0.8200000000000001,0.6560811129599998,Coarse-grid numerical illustration (synthetic)
+0.8250000000000001,0.6396194984374997,Coarse-grid numerical illustration (synthetic)
+0.8300000000000001,0.6230572671599999,Coarse-grid numerical illustration (synthetic)
+0.835,0.6063944091975001,Coarse-grid numerical illustration (synthetic)
+0.84,0.5896309145600002,Coarse-grid numerical illustration (synthetic)
+0.845,0.5727667731975001,Coarse-grid numerical illustration (synthetic)
+0.85,0.5558019750000002,Coarse-grid numerical illustration (synthetic)
+0.855,0.5387365097975001,Coarse-grid numerical illustration (synthetic)
+0.86,0.5215703673600001,Coarse-grid numerical illustration (synthetic)
+0.865,0.5043035373975,Coarse-grid numerical illustration (synthetic)
+0.87,0.48693600955999994,Coarse-grid numerical illustration (synthetic)
+0.875,0.4694677734375,Coarse-grid numerical illustration (synthetic)
+0.88,0.45189881856,Coarse-grid numerical illustration (synthetic)
+0.885,0.43422913439749994,Coarse-grid numerical illustration (synthetic)
+0.89,0.41645871035999993,Coarse-grid numerical illustration (synthetic)
+0.895,0.39858753579750006,Coarse-grid numerical illustration (synthetic)
+0.9,0.3806155999999999,Coarse-grid numerical illustration (synthetic)
+0.905,0.36254289219749997,Coarse-grid numerical illustration (synthetic)
+0.91,0.3443694015599999,Coarse-grid numerical illustration (synthetic)
+0.915,0.32609511719749984,Coarse-grid numerical illustration (synthetic)
+0.92,0.30772002815999994,Coarse-grid numerical illustration (synthetic)
+0.925,0.28924412343749983,Coarse-grid numerical illustration (synthetic)
+0.93,0.2706673919599997,Coarse-grid numerical illustration (synthetic)
+0.935,0.25198982259749975,Coarse-grid numerical illustration (synthetic)
+0.9400000000000001,0.23321140415999966,Coarse-grid numerical illustration (synthetic)
+0.9450000000000001,0.21433212539749985,Coarse-grid numerical illustration (synthetic)
+0.9500000000000001,0.19535197499999984,Coarse-grid numerical illustration (synthetic)
+0.9550000000000001,0.17627094159749981,Coarse-grid numerical illustration (synthetic)
+0.96,0.15708901376000003,Coarse-grid numerical illustration (synthetic)
+0.965,0.13780617999750006,Coarse-grid numerical illustration (synthetic)
+0.97,0.11842242876000009,Coarse-grid numerical illustration (synthetic)
+0.975,0.09893774843750011,Coarse-grid numerical illustration (synthetic)
+0.98,0.07935212736000015,Coarse-grid numerical illustration (synthetic)
+0.985,0.05966555379749999,Coarse-grid numerical illustration (synthetic)
+0.99,0.03987801596000006,Coarse-grid numerical illustration (synthetic)
+0.995,0.019989501997499912,Coarse-grid numerical illustration (synthetic)
+1.0,0.0,Coarse-grid numerical illustration (synthetic)
+0.0,2.0,Fine-grid numerical illustration (synthetic)
+0.025,1.9987506246093751,Fine-grid numerical illustration (synthetic)
+0.05,1.99500249375,Fine-grid numerical illustration (synthetic)
+0.07500000000000001,1.988755593359375,Fine-grid numerical illustration (synthetic)
+0.1,1.9800099,Fine-grid numerical illustration (synthetic)
+0.125,1.968765380859375,Fine-grid numerical illustration (synthetic)
+0.15000000000000002,1.9550219937500002,Fine-grid numerical illustration (synthetic)
+0.17500000000000002,1.938779687109375,Fine-grid numerical illustration (synthetic)
+0.2,1.9200383999999997,Fine-grid numerical illustration (synthetic)
+0.225,1.898798062109375,Fine-grid numerical illustration (synthetic)
+0.25,1.87505859375,Fine-grid numerical illustration (synthetic)
+0.275,1.8488199058593748,Fine-grid numerical illustration (synthetic)
+0.30000000000000004,1.8200819,Fine-grid numerical illustration (synthetic)
+0.325,1.7888444683593752,Fine-grid numerical illustration (synthetic)
+0.35000000000000003,1.7551074937499997,Fine-grid numerical illustration (synthetic)
+0.375,1.7188708496093748,Fine-grid numerical illustration (synthetic)
+0.4,1.6801344,Fine-grid numerical illustration (synthetic)
+0.42500000000000004,1.6388979996093749,Fine-grid numerical illustration (synthetic)
+0.45,1.5951614937499998,Fine-grid numerical illustration (synthetic)
+0.47500000000000003,1.548924718359375,Fine-grid numerical illustration (synthetic)
+0.5,1.5001875,Fine-grid numerical illustration (synthetic)
+0.525,1.448949655859375,Fine-grid numerical illustration (synthetic)
+0.55,1.3952109937500001,Fine-grid numerical illustration (synthetic)
+0.5750000000000001,1.338971312109375,Fine-grid numerical illustration (synthetic)
+0.6000000000000001,1.2802304,Fine-grid numerical illustration (synthetic)
+0.625,1.218988037109375,Fine-grid numerical illustration (synthetic)
+0.65,1.1552439937499999,Fine-grid numerical illustration (synthetic)
+0.675,1.0889980308593747,Fine-grid numerical illustration (synthetic)
+0.7000000000000001,1.0202498999999998,Fine-grid numerical illustration (synthetic)
+0.7250000000000001,0.9489993433593747,Fine-grid numerical illustration (synthetic)
+0.75,0.87524609375,Fine-grid numerical illustration (synthetic)
+0.775,0.7989898746093749,Fine-grid numerical illustration (synthetic)
+0.8,0.7202303999999998,Fine-grid numerical illustration (synthetic)
+0.8250000000000001,0.6389673746093748,Fine-grid numerical illustration (synthetic)
+0.8500000000000001,0.5552004937499998,Fine-grid numerical illustration (synthetic)
+0.875,0.46892944335937503,Fine-grid numerical illustration (synthetic)
+0.9,0.3801538999999999,Fine-grid numerical illustration (synthetic)
+0.925,0.28887353085937484,Fine-grid numerical illustration (synthetic)
+0.9500000000000001,0.19508799374999986,Fine-grid numerical illustration (synthetic)
+0.9750000000000001,0.09879693710937468,Fine-grid numerical illustration (synthetic)
+1.0,0.0,Fine-grid numerical illustration (synthetic)
+0.0,2.000024961738517,Measurement illustration (synthetic)
+0.05,1.994569179336561,Measurement illustration (synthetic)
+0.1,1.980164814746816,Measurement illustration (synthetic)
+0.15000000000000002,1.9552555443295712,Measurement illustration (synthetic)
+0.2,1.9198222747926876,Measurement illustration (synthetic)
+0.25,1.8746757005639285,Measurement illustration (synthetic)
+0.30000000000000004,1.8198007351682521,Measurement illustration (synthetic)
+0.35000000000000003,1.7552254036091202,Measurement illustration (synthetic)
+0.4,1.6800778687438709,Measurement illustration (synthetic)
+0.45,1.595106885946489,Measurement illustration (synthetic)
+0.5,1.5005309455969655,Measurement illustration (synthetic)
+0.55,1.3949284689401953,Measurement illustration (synthetic)
+0.6000000000000001,1.2799980189800093,Measurement illustration (synthetic)
+0.65,1.155241189986594,Measurement illustration (synthetic)
+0.7000000000000001,1.0199256372248007,Measurement illustration (synthetic)
+0.75,0.8751872158231716,Measurement illustration (synthetic)
+0.8,0.7201659417672682,Measurement illustration (synthetic)
+0.8500000000000001,0.5549270973424093,Measurement illustration (synthetic)
+0.9,0.38002808394361653,Measurement illustration (synthetic)
+0.9500000000000001,0.1949678193210853,Measurement illustration (synthetic)
+1.0,0.0,Measurement illustration (synthetic)
