@@ -1,6 +1,6 @@
 # Scientific Plotting Skill
 
-科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标与参考误差子图。
+科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标、参考误差子图和可选误差棒。
 
 ## 仓库
 
@@ -118,6 +118,33 @@ audit = figure.scientific_metadata
 ```
 
 有符号误差是 `y - ref`，绝对误差是 `abs(y - ref)`，相对误差是 `(y - ref) / abs(ref)`。默认按坐标和顺序严格匹配，不按行号硬减，也不排序、外推或平滑。相对误差遇到零参考会报错。误差子图的纵轴保持线性，横轴与主图相同。误差线、阴影和统计标注必须来自已有数据和明确含义，不能为了好看临时添加。
+
+## 可选误差棒
+
+误差棒表示测点自身的不确定度，和上面相对参考曲线的误差子图不是一回事；两者可以同时使用，但误差子图不会继承或换算这些误差棒。
+
+通过 Skill 绘图时，不必每次声明“加上误差棒”。Agent 先看数据：有标准差、标准误、置信区间或上下限这类列，就用该列；同一位置有重复测量、图又该显示汇总结果时，画平均值和样本标准差（ddof=1），并写明 n。一条没有不确定度的曲线，例如 DNS、公式或残差，不加误差棒。只有两种统计量会改变结论、或用户要求互相矛盾时才询问。直接调用母板或命令行时仍要传入幅度和 `definition`，因为脚本不能自行猜测，也不会把标准差换算成标准误或置信区间。
+
+
+对称误差用一列，上下不对称就同时给下限和上限。幅度与坐标同一单位，允许为 0，不允许负数或空值。对数轴上，误差棒伸到 0 或负数会直接报错，不会裁掉。柱状图只有纵向误差棒，用深灰色画在柱心上。折线、点线、散点和混合图的误差棒跟该系列同色，画在标记后面，每个点都画，不抽稀。
+
+```bash
+.venv/bin/python scientific-plotting/scripts/plot_template.py \
+  --input /path/to/repeats.csv \
+  --kind point-line --x radius --y velocity --group probe \
+  --yerr sd --errorbar-definition 'sample standard deviation, n=4' \
+  --xlabel 'Radius, r/R' --ylabel 'Velocity, u/Ub' \
+  --output /path/to/figures/uncertainty
+```
+
+```python
+figure, axes, paths = render_plot(
+    observations, kind="point-line", x="radius", y="velocity", group="probe",
+    error_bars={"y": "sd", "definition": "sample standard deviation, n=4"},
+)
+```
+
+不对称时用 `y_lower` 和 `y_upper`（命令行是 `--yerr-lower` 与 `--yerr-upper`）。需要横向误差棒时用 `x` 或 `x_lower`/`x_upper`。`--errorbar-capsize` 是端帽的半长，单位 pt，默认 2.2；`--errorbar-elinewidth` 是线宽，默认 0.8 pt。
 
 ## 风格和贡献
 

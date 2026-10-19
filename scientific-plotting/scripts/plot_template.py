@@ -11,7 +11,8 @@ import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.collections import PathCollection
+from matplotlib.collections import LineCollection, PathCollection
+from matplotlib.container import BarContainer
 from matplotlib import colors, font_manager
 from matplotlib.ticker import AutoMinorLocator, LogFormatterSciNotation, LogLocator, NullFormatter
 import numpy as np
@@ -37,6 +38,11 @@ SCATTER_DENSE_PT = 5.0
 SCATTER_SPARSE_PT = 6.2
 LINESTYLES = ("-", "--", "-.", ":", (0, (8, 2)), (0, (4, 1)),
               (0, (5, 2, 1, 2, 1, 2)), (0, (2, 1, 2, 3)))
+
+ERRORBAR_CAPSIZE_PT = 2.2
+ERRORBAR_ELINEWIDTH_PT = 0.8
+_ERRORBAR_KEYS = frozenset({"x", "y", "x_lower", "x_upper", "y_lower", "y_upper",
+                            "capsize", "elinewidth", "definition"})
 
 
 def resolve_font(requested: str) -> str:
@@ -228,6 +234,8 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
         collection.set_edgecolor("#2A2A2A")
         collection.set_alpha(0.85 if spacing < 12 else 1)
     for line in axes.lines:
+        if getattr(line, "_scientific_errorbar", False):
+            continue
         style = getattr(line, "_scientific_style", {})
         series_kind = style.get("kind", kind)
         vertices = line.get_path().transformed(line.get_transform()).vertices
@@ -434,6 +442,8 @@ def _copy_identity(source, target) -> None:
         target.set_edgecolor(source.get_edgecolor())
         target.set_linewidth(source.get_linewidth())
         target.set_alpha(source.get_alpha())
+    elif isinstance(source, BarContainer):
+        return
     else:
         target.set_color(source.get_color())
         target.set_linestyle(getattr(source, "_scientific_linestyle", source.get_linestyle()))
@@ -596,6 +606,170 @@ def _comparison_errors(values: list, x: str, y: str, error: dict | None) -> tupl
                          "interpolation": interpolation, "zero_reference": "raise", "comparisons": records}
 
 
+def _error_magnitudes(frame: pd.DataFrame, value, name: str) -> tuple[np.ndarray, str]:
+    """Non-negative magnitudes in row order. Nothing is rescaled or imputed."""
+    if isinstance(value, str):
+        if value not in frame.columns:
+            raise ValueError(f"Error bar column {value!r} is missing.")
+        values = _numeric(frame, value)
+        source = value
+    elif isinstance(value, pd.Series):
+        if not value.index.equals(frame.index):
+            raise ValueError(f"Error bar {name} Series must use the same row index, without reordering.")
+        try:
+            values = value.to_numpy(dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Error bar {name} must be numeric.") from exc
+        if not np.isfinite(values).all():
+            raise ValueError(f"Error bar {name} contains non-finite values.")
+        source = "array"
+    elif isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"Error bar {name} must be a column, a constant, or one magnitude per row.")
+    elif isinstance(value, (int, float, np.integer, np.floating)):
+        if not np.isfinite(value) or float(value) < 0:
+            raise ValueError(f"Error bar {name} must be a finite non-negative magnitude.")
+        values = np.full(len(frame), float(value))
+        source = "constant"
+    else:
+        try:
+            values = np.asarray(value, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Error bar {name} must be a column, a constant, or one magnitude per row.") from exc
+        if values.ndim == 0:
+            if not np.isfinite(values) or float(values) < 0:
+                raise ValueError(f"Error bar {name} must be a finite non-negative magnitude.")
+            values = np.full(len(frame), float(values))
+            source = "constant"
+        elif values.shape != (len(frame),):
+            raise ValueError(f"Error bar {name} must provide one magnitude per row, in the current row order.")
+        elif not np.isfinite(values).all():
+            raise ValueError(f"Error bar {name} contains non-finite values.")
+        else:
+            source = "array"
+    if np.any(values < 0):
+        raise ValueError(f"Error bar {name} contains a negative magnitude; supply magnitudes, not signed offsets.")
+    return values, source
+
+
+def _resolve_error_bars(frame: pd.DataFrame, error_bars: dict | None, *, x: str | None, y: str | None,
+                        kind: str, xscale: str, yscale: str) -> dict | None:
+    if error_bars is None:
+        return None
+    if not isinstance(error_bars, dict):
+        raise ValueError("error_bars must be a mapping of magnitudes and a definition.")
+    unknown = set(error_bars) - _ERRORBAR_KEYS
+    if unknown:
+        raise ValueError(f"Unknown error_bars keys: {sorted(unknown)}")
+    if kind not in (*SERIES_KINDS, "mixed", "bar"):
+        raise ValueError("Error bars apply to line, point-line, scatter, mixed and bar plots.")
+    definition = error_bars.get("definition")
+    if not isinstance(definition, str) or not definition.strip():
+        raise ValueError("error_bars requires definition describing the magnitudes, such as sample standard deviation.")
+    directions = {}
+    sources = {}
+    for axis_name in ("x", "y"):
+        symmetric = error_bars.get(axis_name)
+        lower = error_bars.get(f"{axis_name}_lower")
+        upper = error_bars.get(f"{axis_name}_upper")
+        if symmetric is not None and (lower is not None or upper is not None):
+            raise ValueError(f"Use either symmetric {axis_name} or {axis_name}_lower/{axis_name}_upper, not both.")
+        if (lower is None) != (upper is None):
+            raise ValueError(f"{axis_name} error bars need both lower and upper magnitudes.")
+        if symmetric is None and lower is None:
+            continue
+        if axis_name == "x" and kind == "bar":
+            raise ValueError("Bar plots accept y error bars only; x categories are not numeric positions.")
+        column = x if axis_name == "x" else y
+        if not isinstance(column, str):
+            raise ValueError(f"{axis_name} error bars require the plotted {axis_name} column.")
+        if symmetric is not None:
+            lower_values, source = _error_magnitudes(frame, symmetric, axis_name)
+            upper_values = lower_values
+            mode = "symmetric"
+            sources[axis_name] = source
+        else:
+            lower_values, lower_source = _error_magnitudes(frame, lower, f"{axis_name}_lower")
+            upper_values, upper_source = _error_magnitudes(frame, upper, f"{axis_name}_upper")
+            mode = "asymmetric"
+            sources[axis_name] = {"lower": lower_source, "upper": upper_source}
+        data = _numeric(frame, column)
+        scale = xscale if axis_name == "x" else yscale
+        if scale == "log" and np.any(data - lower_values <= 0):
+            raise ValueError(
+                f"A {axis_name} error bar reaches a non-positive value on a log axis; "
+                "no whiskers were clipped or removed.")
+        for side, magnitudes in (("lower", lower_values), ("upper", upper_values)):
+            reserved = f"__scientific_{axis_name}_{side}"
+            if reserved in frame.columns:
+                raise ValueError(f"Column {reserved} is reserved for error bars.")
+            frame[reserved] = magnitudes
+        directions[axis_name] = mode
+    if not directions:
+        raise ValueError("error_bars needs an x or y magnitude.")
+    capsize = error_bars.get("capsize", ERRORBAR_CAPSIZE_PT)
+    elinewidth = error_bars.get("elinewidth", ERRORBAR_ELINEWIDTH_PT)
+    for label, value, maximum in (("capsize", capsize, 8), ("elinewidth", elinewidth, 3)):
+        if (isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float, np.integer, np.floating))
+                or not np.isfinite(value) or not 0 < float(value) <= maximum):
+            raise ValueError(f"error_bars {label} must be a positive finite value up to {maximum} pt.")
+    return {
+        "definition": definition.strip(),
+        "capsize_pt": float(capsize),
+        "elinewidth_pt": float(elinewidth),
+        "x": None if "x" not in directions else {"mode": directions["x"], "source": sources["x"]},
+        "y": None if "y" not in directions else {"mode": directions["y"], "source": sources["y"]},
+        "directions": directions,
+    }
+
+
+def _axis_errors(frame: pd.DataFrame, axis_name: str, state: dict) -> np.ndarray | None:
+    if axis_name not in state["directions"]:
+        return None
+    return np.vstack([
+        frame[f"__scientific_{axis_name}_lower"].to_numpy(dtype=float),
+        frame[f"__scientific_{axis_name}_upper"].to_numpy(dtype=float),
+    ])
+
+
+def _errorbar_record(label: str, x_values, y_values, yerr, xerr) -> dict:
+    record = {"series": label,
+              "x": np.asarray(x_values, dtype=float).tolist(),
+              "y": np.asarray(y_values, dtype=float).tolist()}
+    if yerr is not None:
+        record["y_lower"] = np.asarray(yerr[0], dtype=float).tolist()
+        record["y_upper"] = np.asarray(yerr[1], dtype=float).tolist()
+    if xerr is not None:
+        record["x_lower"] = np.asarray(xerr[0], dtype=float).tolist()
+        record["x_upper"] = np.asarray(xerr[1], dtype=float).tolist()
+    return record
+
+
+def _artist_color(artist):
+    if isinstance(artist, PathCollection):
+        painted = artist.get_facecolor()
+        if len(painted) == 0:
+            raise ValueError("Scatter series has no face color for error bars.")
+        return painted[0]
+    return artist.get_color()
+
+
+def _draw_errorbars(axes, x_values, y_values, *, yerr, xerr, color, capsize: float,
+                    elinewidth: float, zorder: float) -> None:
+    container = axes.errorbar(
+        np.asarray(x_values, dtype=float), np.asarray(y_values, dtype=float),
+        yerr=yerr, xerr=xerr, fmt="none", ecolor=color, elinewidth=elinewidth,
+        capsize=capsize, capthick=elinewidth, zorder=zorder, label="_nolegend_",
+    )
+    for artist in container.get_children():
+        artist._scientific_errorbar = True
+        artist.set_label("_nolegend_")
+        artist.set_zorder(zorder)
+        artist.set_color(color)
+        if not isinstance(artist, LineCollection):
+            artist.set_markeredgecolor(color)
+            artist.set_markerfacecolor(color)
+
+
 def render_plot(
     data: pd.DataFrame | dict | np.ndarray,
     *,
@@ -619,6 +793,7 @@ def render_plot(
     yscale: str = "linear",
     series_styles: dict | None = None,
     error: dict | None = None,
+    error_bars: dict | None = None,
     legend: str = "auto",
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
@@ -653,6 +828,7 @@ def render_plot(
         values = _groups(frame, group, ordered)
         styles = _series_options(values, kind, series_styles, line_width, marker_size)
         comparisons, error_metadata = _comparison_errors(values, x, y, error)
+    error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale, yscale=yscale)
     text_sizes = TEXT_SIZES_PT[size]
     with mpl.rc_context({"font.family": face, "font.size": text_sizes["tick"],
                          "axes.labelsize": text_sizes["label"], "axes.titlesize": text_sizes["title"],
@@ -665,13 +841,34 @@ def render_plot(
                                       gridspec_kw={"height_ratios": [2.4, 1]} if error is not None else None)
         axes = panels[0] if error is not None else panels
         error_axes = panels[1] if error is not None else None
-        figure.scientific_metadata = {"xscale": xscale, "yscale": yscale, "error": error_metadata if error is not None else None}
+        figure.scientific_metadata = {
+            "xscale": xscale, "yscale": yscale,
+            "error": error_metadata if error is not None else None,
+            "error_bars": None if error_bar_state is None else {
+                "definition": error_bar_state["definition"],
+                "capsize_pt": error_bar_state["capsize_pt"],
+                "elinewidth_pt": error_bar_state["elinewidth_pt"],
+                "x": error_bar_state["x"],
+                "y": error_bar_state["y"],
+                "series": [],
+            },
+        }
         figure.scientific_error_axes = error_axes
         axes.set_xscale(xscale)
         axes.set_yscale(yscale)
         _style_axes(axes, kind)
         artists = {}
         error_artists = {}
+        error_bar_records = []
+
+        def draw_uncertainty(x_values, y_values, yerr, xerr, color, label, zorder) -> None:
+            if error_bar_state is None or (yerr is None and xerr is None):
+                return
+            _draw_errorbars(axes, x_values, y_values, yerr=yerr, xerr=xerr, color=color,
+                            capsize=error_bar_state["capsize_pt"], elinewidth=error_bar_state["elinewidth_pt"],
+                            zorder=zorder)
+            error_bar_records.append(_errorbar_record(label, x_values, y_values, yerr, xerr))
+
         if kind in ("point-line", "line", "scatter", "bar", "mixed"):
             _required(frame, x, y)
             if kind in (*SERIES_KINDS, "mixed"):
@@ -684,6 +881,11 @@ def render_plot(
                 for index, (label, subset) in enumerate(values):
                     x_values, y_values = _numeric(subset, x), _numeric(subset, y)
                     artists[label] = _draw_series(axes, x_values, y_values, label, styles[label], index, palette[index])
+                    if error_bar_state is not None:
+                        artist = artists[label]
+                        draw_uncertainty(x_values, y_values, _axis_errors(subset, "y", error_bar_state),
+                                         _axis_errors(subset, "x", error_bar_state), _artist_color(artist), label,
+                                         2.5 if isinstance(artist, PathCollection) else 1.5)
                 if error_axes is not None:
                     error_axes.set_xscale(xscale)
                     _style_axes(error_axes, kind)
@@ -702,8 +904,13 @@ def render_plot(
                 if group is None:
                     if frame[x].duplicated().any():
                         raise ValueError("Repeated bar category; aggregate explicitly or specify --group.")
-                    axes.bar(frame[x].astype(str), frame[y], color=CATEGORICAL_COLORS[0],
-                             edgecolor="#333333", linewidth=0.65)
+                    bars = axes.bar(frame[x].astype(str), frame[y], color=CATEGORICAL_COLORS[0],
+                                    edgecolor="#333333", linewidth=0.65)
+                    if error_bar_state is not None:
+                        centers = [patch.get_x() + patch.get_width() / 2 for patch in bars]
+                        heights = [patch.get_height() for patch in bars]
+                        draw_uncertainty(centers, heights, _axis_errors(frame, "y", error_bar_state), None,
+                                         "#333333", "", 3)
                 else:
                     categories = list(pd.unique(frame[x]))
                     width = 0.8 / len(values)
@@ -712,10 +919,20 @@ def render_plot(
                         if subset[x].duplicated().any():
                             raise ValueError("Repeated group/category; aggregate explicitly before plotting.")
                         positions = np.arange(len(categories)) - 0.4 + width * (index + 0.5)
-                        heights = subset.set_index(x)[y].reindex(categories)
-                        axes.bar(positions, heights, width=width, label=label, color=palette[index],
-                                 edgecolor="#333333", linewidth=0.65,
-                                 hatch=("", "//", "..", "xx")[index % 4])
+                        indexed = subset.set_index(x)
+                        heights = indexed[y].reindex(categories)
+                        bars = axes.bar(positions, heights, width=width, label=label, color=palette[index],
+                                        edgecolor="#333333", linewidth=0.65,
+                                        hatch=("", "//", "..", "xx")[index % 4])
+                        if error_bar_state is not None:
+                            lower = indexed["__scientific_y_lower"].reindex(categories)
+                            upper = indexed["__scientific_y_upper"].reindex(categories)
+                            if heights.isna().any() or lower.isna().any() or upper.isna().any():
+                                raise ValueError("Missing group/category for error bars; complete or aggregate the table explicitly.")
+                            centers = [patch.get_x() + patch.get_width() / 2 for patch in bars]
+                            plotted = [patch.get_height() for patch in bars]
+                            yerr = np.vstack([lower.to_numpy(dtype=float), upper.to_numpy(dtype=float)])
+                            draw_uncertainty(centers, plotted, yerr, None, "#333333", label, 3)
                     axes.set_xticks(np.arange(len(categories)), [str(category) for category in categories])
         elif kind == "heatmap":
             if x is not None or y is not None or value is not None:
@@ -772,6 +989,8 @@ def render_plot(
         for label, artist in error_artists.items():
             _copy_identity(artists[label], artist)
         _sync_legend(axes)
+        if error_bar_state is not None:
+            figure.scientific_metadata["error_bars"]["series"] = error_bar_records
         if artists:
             figure.scientific_metadata["series"] = {
                 label: {"kind": styles[label]["kind"],
@@ -792,7 +1011,7 @@ def render_plot(
                 destination = target.with_suffix(f".{format_name}")
                 figure.savefig(destination, format=format_name, dpi=dpi, facecolor="white")
                 exported.append(destination)
-            if error is not None:
+            if error is not None or error_bar_state is not None:
                 target.with_name(target.stem + "_metadata.json").write_text(
                     json.dumps(figure.scientific_metadata, indent=2) + "\n", encoding="utf-8")
         return figure, axes, exported
@@ -811,6 +1030,28 @@ def _source_script(target: Path, args: list[str]) -> None:
         "subprocess.run([sys.executable, str(template), *args], check=True)\n",
         encoding="utf-8",
     )
+
+
+def _cli_error_bars(options, parser) -> dict | None:
+    payload = {}
+    for key, value in (("y", options.yerr), ("x", options.xerr),
+                       ("y_lower", options.yerr_lower), ("y_upper", options.yerr_upper),
+                       ("x_lower", options.xerr_lower), ("x_upper", options.xerr_upper)):
+        if value is not None:
+            payload[key] = value
+    if options.errorbar_capsize is not None:
+        payload["capsize"] = options.errorbar_capsize
+    if options.errorbar_elinewidth is not None:
+        payload["elinewidth"] = options.errorbar_elinewidth
+    if options.errorbar_definition is not None:
+        payload["definition"] = options.errorbar_definition
+    if not payload:
+        return None
+    if not payload.keys() & {"x", "y", "x_lower", "x_upper", "y_lower", "y_upper"}:
+        parser.error("error-bar cap size or definition requires --yerr/--xerr or a lower/upper pair")
+    if "definition" not in payload:
+        parser.error("--errorbar-definition is required when error bars are requested")
+    return payload
 
 
 def run_cli(argv: list[str] | None = None) -> list[Path]:
@@ -839,6 +1080,15 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--error-definition", choices=("signed", "absolute", "relative"))
     parser.add_argument("--error-interpolation", choices=("none", "linear"), default="none")
     parser.add_argument("--error-ylabel", help="Error-axis label, including original y units for signed/absolute error")
+    parser.add_argument("--yerr", help="Symmetric y error-bar column; non-negative magnitude, not a computed statistic")
+    parser.add_argument("--xerr", help="Symmetric x error-bar column; non-negative magnitude")
+    parser.add_argument("--yerr-lower", help="Asymmetric y error bar, lower magnitude")
+    parser.add_argument("--yerr-upper", help="Asymmetric y error bar, upper magnitude")
+    parser.add_argument("--xerr-lower", help="Asymmetric x error bar, lower magnitude")
+    parser.add_argument("--xerr-upper", help="Asymmetric x error bar, upper magnitude")
+    parser.add_argument("--errorbar-capsize", type=float, help="Error-bar cap half-length in points")
+    parser.add_argument("--errorbar-elinewidth", type=float, help="Error-bar stroke width in points")
+    parser.add_argument("--errorbar-definition", help="Required with error bars: what the magnitudes mean")
     parser.add_argument("--zero-reference", choices=("raise",), default="raise")
     parser.add_argument("--sheet", default="0", help="Excel sheet name or zero-based number")
     parser.add_argument("--index-col", help="Matrix heatmap row-label column")
@@ -872,7 +1122,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         output=options.output, formats=options.formats, dpi=options.dpi,
         line_width=options.line_width, marker_size=options.marker_size,
         xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
-        error=error, legend=options.legend,
+        error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
     )
     plt.close(figure)
     if not options.no_script:

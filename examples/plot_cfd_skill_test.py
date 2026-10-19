@@ -529,6 +529,32 @@ def build_catalog(cases: dict[int, dict], second: dict, curvature: float,
         "meaning": "表格样本的分布形状。近壁点更密，所以这不是按高度均匀抽样的概率密度，也不是实验重复测量。",
         "parameters": "每个小提琴使用该 Re_tau 均值表的全部原始 uu+，不平滑剖面。",
     })
+
+    radius = np.array([0.15, 0.30, 0.45, 0.60, 0.75, 0.90])
+    baseline = np.array([1.86, 1.70, 1.46, 1.14, 0.74, 0.28])
+    generator = np.random.default_rng(21)
+    repeats = {
+        "Probe A (synth.)": baseline + generator.normal(0.0, 0.05, size=(4, radius.size)),
+        "Probe B (synth.)": baseline - 0.08 + generator.normal(0.0, 0.06, size=(4, radius.size)),
+    }
+    probes = pd.concat([
+        pd.DataFrame({"x": radius, "y": values.mean(axis=0), "sd": values.std(axis=0, ddof=1), "series": label})
+        for label, values in repeats.items()
+    ], ignore_index=True)
+    if (probes["y"] <= 0).any() or (probes["sd"] <= 0).any():
+        raise RuntimeError("Synthetic probe summary is not a positive velocity with a positive sample standard deviation")
+    add({
+        "id": "D01_errorbar_probe", "kind": "point-line", "frame": probes, "group_kind": "categorical",
+        "error_bars": {"y": "sd", "definition": "sample standard deviation of 4 synthetic repeats (ddof=1)"},
+        "xscale": "linear", "yscale": "linear", "size": "double",
+        "xlabel": "Radius, r/R", "ylabel": "Mean axial velocity, u/Ub",
+        "title": "Synthetic probe uncertainty",
+        "source": "两组人为生成的重复测点，不是实验，也不是 DNS。",
+        "meaning": "每个点是 4 次合成重复的平均值，误差棒是这 4 次的样本标准差。它不表示相对解析解的偏差。",
+        "parameters": "半径 0.15–0.90；Probe A 以 1.86, 1.70, 1.46, 1.14, 0.74, 0.28 为中心，正态噪声标准差 0.05；"
+                      "Probe B 低 0.08，噪声标准差 0.06。生成器种子 21，n=4，ddof=1。"
+                      "母板只读取表里的平均值和 sd，不重新计算。",
+    })
     return catalog
 
 
@@ -561,18 +587,21 @@ def render_catalog(template, catalog: list[dict]) -> list[dict]:
             kwargs["legend"] = case["legend"]
         if case.get("error") is not None:
             kwargs["error"] = case["error"]
+        if case.get("error_bars") is not None:
+            kwargs["error_bars"] = case["error_bars"]
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             figure, axes, paths = template.render_plot(frame, **kwargs)
         warning_text = [str(item.message) for item in caught]
+        plotted = [line for line in axes.lines if not getattr(line, "_scientific_errorbar", False)]
         if case["kind"] == "line":
-            if any(marker_name(line) is not None for line in axes.lines):
+            if any(marker_name(line) is not None for line in plotted):
                 raise RuntimeError(f"{case['id']} drew markers on a line plot")
         elif case["kind"] == "point-line":
-            if not axes.lines or any(marker_name(line) is None for line in axes.lines):
+            if not plotted or any(marker_name(line) is None for line in plotted):
                 raise RuntimeError(f"{case['id']} is missing point-line markers")
         elif case["kind"] == "scatter":
-            if axes.lines:
+            if plotted:
                 raise RuntimeError(f"{case['id']} connected a scatter plot")
         elif case["kind"] == "mixed":
             kinds = {label: item["kind"] for label, item in figure.scientific_metadata["series"].items()}
@@ -586,9 +615,14 @@ def render_catalog(template, catalog: list[dict]) -> list[dict]:
             "xlabel": case["xlabel"], "ylabel": case["ylabel"], "title": case["title"],
             "xscale": case["xscale"], "yscale": case["yscale"], "size_mm": [183, 136],
             "metadata_series": figure.scientific_metadata.get("series"),
-            "markers": [marker_name(line) for line in axes.lines],
-            "line_widths_pt": [float(line.get_linewidth()) for line in axes.lines],
+            "markers": [marker_name(line) for line in plotted],
+            "line_widths_pt": [float(line.get_linewidth()) for line in plotted],
         }
+        uncertainty = figure.scientific_metadata.get("error_bars")
+        if uncertainty:
+            audit["error_bars"] = {"definition": uncertainty["definition"], "x": uncertainty["x"],
+                                   "y": uncertainty["y"], "capsize_pt": uncertainty["capsize_pt"],
+                                   "elinewidth_pt": uncertainty["elinewidth_pt"]}
         if case.get("heatmap_nearest") is not None:
             audit["heatmap_nearest"] = case["heatmap_nearest"]
         audits.append(audit)
@@ -611,6 +645,7 @@ def write_report(cases: dict[int, dict], second: dict, audits: list[dict], font_
         f"字体：请求 Arial，实际使用 {font_name}。画布均为双栏 183 × 136 mm，300 dpi，只导出 PNG。",
         "真实数据只来自 Kawamura Lab 充分发展通道流数据库的本地缓存；原始文件保留实验室的权利声明和引用要求。",
         "解析解、残差、圆柱力和带 synth. 的测点都是为测试图类型构造的，不能当作求解器或实验验证。",
+        "误差棒是可选项。只有 D01 使用，数值是合成重复测量的样本标准差，不是 DNS 或实验不确定度。",
         "图内不画标题。下面的建议图注留给论文里的 Fig. N，不写进图片。",
         "",
         "## 数据文件",
@@ -633,6 +668,10 @@ def write_report(cases: dict[int, dict], second: dict, audits: list[dict], font_
             f"- 关键参数：{audit['parameters']}",
             f"- 行数 {audit['rows']}；坐标 {audit['xscale']}/{audit['yscale']}；标记 {audit['markers'] or '无'}；"
             f"线宽 {audit['line_widths_pt'] or '无'} pt。",
+        ])
+        if audit.get("error_bars"):
+            lines.append(f"- 误差棒：{audit['error_bars']['definition']}。")
+        lines.extend([
             f"- 警告：{audit['warnings'] or '无'}。",
             "",
         ])
