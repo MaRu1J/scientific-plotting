@@ -28,9 +28,13 @@ FORMATS = ("png", "svg", "pdf", "tiff", "eps")
 KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed")
 SERIES_KINDS = ("line", "point-line", "scatter")
 FONTS = {"Arial": "Liberation Sans", "Times New Roman": "Liberation Serif"}
-CATEGORICAL_COLORS = ("#126b80", "#b16a25", "#75629b", "#4c8149", "#a65659", "#8c6e45", "#2a8b83", "#566074")
-ORDERED_COLORS = ("#c9a61b", "#94b32c", "#58a94b", "#278f70", "#136e85")
-MARKERS = ("o", "s", "^", "D", "v", "P", "X", "<")
+# Categorical hues stay apart and dark enough for a thin line on white.
+# Ordered stops run amber -> yellow-green -> green -> teal -> deep blue-teal.
+CATEGORICAL_COLORS = ("#2F6DB5", "#D35400", "#1B8A4C", "#AA3377", "#6A7020", "#C4453A", "#5C4E9A", "#3A3F46")
+ORDERED_COLORS = ("#C46B04", "#578006", "#24782B", "#066955", "#0A5270")
+MARKERS = ("o", "s", "^", "D", "v", "p")
+SCATTER_DENSE_PT = 5.0
+SCATTER_SPARSE_PT = 6.2
 LINESTYLES = ("-", "--", "-.", ":", (0, (8, 2)), (0, (4, 1)),
               (0, (5, 2, 1, 2, 1, 2)), (0, (2, 1, 2, 3)))
 
@@ -100,13 +104,80 @@ def _ordered_groups(frame: pd.DataFrame, group: str | None, group_kind: str) -> 
     return bool(pd.api.types.is_numeric_dtype(series) or pd.api.types.is_datetime64_any_dtype(series))
 
 
+def _linear_srgb(channel: float) -> float:
+    return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def _encode_srgb(channel: float) -> float:
+    channel = float(np.clip(channel, 0, 1))
+    return 12.92 * channel if channel <= 0.0031308 else 1.055 * channel ** (1 / 2.4) - 0.055
+
+
+def _srgb_to_oklab(color: str) -> np.ndarray:
+    linear = np.array([_linear_srgb(channel) for channel in colors.to_rgb(color)])
+    cone = np.cbrt(np.array([
+        [0.4122214708, 0.5363325363, 0.0514459929],
+        [0.2119034982, 0.6806995451, 0.1073969566],
+        [0.0883024619, 0.2817188376, 0.6299787005],
+    ]) @ linear)
+    return np.array([
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660],
+    ]) @ cone
+
+
+def _oklab_to_hex(oklab: np.ndarray) -> str:
+    long, medium, short = np.array([
+        [1.0, 0.3963377774, 0.2158037573],
+        [1.0, -0.1055613458, -0.0638541728],
+        [1.0, -0.0894841775, -1.2914855480],
+    ]) @ oklab
+    linear = np.array([
+        [4.0767416621, -3.3077115913, 0.2309699292],
+        [-1.2684380046, 2.6097574011, -0.3413193965],
+        [-0.0041960863, -0.7034186147, 1.7076147010],
+    ]) @ np.array([long, medium, short]) ** 3
+    return colors.to_hex(tuple(_encode_srgb(channel) for channel in linear))
+
+
 def _palette(count: int, ordered: bool) -> list[str]:
     if ordered:
-        if count == 1:
+        if count <= 1:
             return [ORDERED_COLORS[-1]]
-        sequence = colors.LinearSegmentedColormap.from_list("amber_to_teal", ORDERED_COLORS)
-        return [colors.to_hex(sequence(shade)) for shade in np.linspace(0, 1, count)]
+        if count == len(ORDERED_COLORS):
+            return list(ORDERED_COLORS)
+        anchors = np.vstack([_srgb_to_oklab(color) for color in ORDERED_COLORS])
+        positions = np.linspace(0, 1, len(ORDERED_COLORS))
+        mixed = []
+        for sample in np.linspace(0, 1, count):
+            mixed.append(_oklab_to_hex(np.array([np.interp(sample, positions, anchors[:, channel])
+                                                 for channel in range(3)])))
+        mixed[0], mixed[-1] = ORDERED_COLORS[0], ORDERED_COLORS[-1]
+        return mixed
     return [CATEGORICAL_COLORS[index % len(CATEGORICAL_COLORS)] for index in range(count)]
+
+
+def connected_stroke(spacing: float) -> tuple[float, float]:
+    """Line width and point-line marker diameter, in points, from within-series spacing."""
+    if spacing < 4:
+        return 1.2, 2.6
+    if spacing < 12:
+        return 1.35, 3.8
+    if spacing < 26:
+        return 1.45, 5.0
+    return 1.8, 6.2
+
+
+def _marker_edge(diameter: float) -> tuple[str, float]:
+    """White edge separates a filled marker from its line; tiny markers stay solid."""
+    if diameter < 3.6:
+        return "face", 0.35
+    if diameter < 4.6:
+        return "white", 0.55
+    if diameter < 5.8:
+        return "white", 0.7
+    return "white", 0.9
 
 
 def _style_axes(axes: mpl.axes.Axes, kind: str) -> None:
@@ -151,9 +222,10 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
         else:
             spacing = np.inf
         override = style.get("marker_size", marker_size)
-        diameter = override if override is not None else (4.5 if spacing < 12 else 5.5)
+        diameter = override if override is not None else (SCATTER_DENSE_PT if spacing < 12 else SCATTER_SPARSE_PT)
         collection.set_sizes(np.full(len(collection.get_offsets()), diameter ** 2))
-        collection.set_linewidth(0.55)
+        collection.set_linewidth(0.45 if diameter < 5.5 else 0.6)
+        collection.set_edgecolor("#2A2A2A")
         collection.set_alpha(0.85 if spacing < 12 else 1)
     for line in axes.lines:
         style = getattr(line, "_scientific_style", {})
@@ -164,15 +236,17 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
                    & (vertices[:, 0] <= border.x1) & (vertices[:, 1] >= border.y0) & (vertices[:, 1] <= border.y1))
         distances = np.linalg.norm(np.diff(vertices, axis=0), axis=1)[visible[:-1] & visible[1:]]
         spacing = float(np.median(distances) * 120 / axes.figure.dpi) if len(distances) else np.inf
-        width = 1.2 if spacing < 4 else 1.35 if spacing < 12 else 1.8 if spacing >= 26 else 1.45
-        diameter = 2.4 if spacing < 4 else 3.5 if spacing < 12 else 5.0 if spacing >= 26 else 3.5
+        width, diameter = connected_stroke(spacing)
         width_override = style.get("line_width", line_width)
         marker_override = style.get("marker_size", marker_size)
         line.set_linewidth(width_override if width_override is not None else width)
         if series_kind == "point-line":
-            line.set_markersize(marker_override if marker_override is not None else diameter)
-            line.set_markeredgewidth(0.7 if spacing < 26 else 0.8)
-            line.set_markerfacecolor(line.get_color() if spacing < 12 else "white")
+            diameter = marker_override if marker_override is not None else diameter
+            edge_mode, edge_width = _marker_edge(diameter)
+            line.set_markersize(diameter)
+            line.set_markerfacecolor(line.get_color())
+            line.set_markeredgecolor(line.get_color() if edge_mode == "face" else "white")
+            line.set_markeredgewidth(edge_width)
 
 
 def _adapt_log_ticks(axes) -> None:
@@ -391,7 +465,8 @@ def _draw_series(axes, x_values, y_values, label, style, index, color):
         artist, = axes.plot(x_values, y_values, label=label or None, color=color,
                             linestyle=linestyle, linewidth=1.5,
                             marker=marker if series_kind == "point-line" else None,
-                            markersize=3.5, markerfacecolor="white", markeredgewidth=0.9)
+                            markersize=6.2, markerfacecolor=color, markeredgecolor="white",
+                            markeredgewidth=0.9)
         artist._scientific_linestyle = linestyle
     artist._scientific_style = style
     return artist

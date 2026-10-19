@@ -1,0 +1,11 @@
+{
+  "kind": "bar",
+  "title": "破口工况峰值包壳温度 / Peak clad temperature",
+  "xlabel": "破口面积 / Break area (cm²)",
+  "ylabel": "峰值包壳温度 / Peak clad T (°C)",
+  "size": "double",
+  "dpi": 300,
+  "x": "x",
+  "y": "y",
+  "legend": "outside"
+}

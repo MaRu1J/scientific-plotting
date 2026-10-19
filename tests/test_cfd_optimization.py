@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "scientific-plotting/scripts/plot_template.py"
 sys.path.insert(0, str(TEMPLATE.parent))
-from plot_template import render_plot
+from plot_template import connected_stroke, render_plot
 
 
 @pytest.fixture(autouse=True)
@@ -185,8 +185,8 @@ def test_density_uses_each_series_final_transform(scale):
                           "series": ["sparse"] * len(sparse) + ["dense"] * len(dense)})
     figure, axes, _ = render_plot(frame, kind="point-line", x="x", y="y", group="series",
                                   xscale=scale, size="double", legend="outside")
-    assert axes.lines[0].get_markersize() == 5
-    assert axes.lines[1].get_markersize() == 2.4
+    assert axes.lines[0].get_markersize() == 6.2
+    assert axes.lines[1].get_markersize() == 2.6
     for line in axes.lines:
         vertices = axes.transData.transform(np.c_[line.get_xdata(), line.get_ydata()])
         spacing = np.median(np.linalg.norm(np.diff(vertices, axis=0), axis=1))
@@ -195,7 +195,7 @@ def test_density_uses_each_series_final_transform(scale):
     assert len(axes.lines[1].get_xdata()) == 1001
     assert axes.lines[1].get_markevery() is None
     handles = axes.get_legend().legend_handles
-    assert [handle.get_markersize() for handle in handles] == [5, 2.4]
+    assert [handle.get_markersize() for handle in handles] == [6.2, 2.6]
 
 
 def test_density_layout_change_recomputed_after_outside_legend():
@@ -204,7 +204,7 @@ def test_density_layout_change_recomputed_after_outside_legend():
     vertices = axes.transData.transform(np.c_[axes.lines[0].get_xdata(), axes.lines[0].get_ydata()])
     spacing = np.median(np.linalg.norm(np.diff(vertices, axis=0), axis=1))
     assert spacing < 26
-    assert axes.lines[0].get_markersize() == 3.5
+    assert axes.lines[0].get_markersize() == connected_stroke(spacing * 120 / axes.figure.dpi)[1]
 
 
 def test_explicit_sizes_override_auto_per_series_then_global():
@@ -244,7 +244,7 @@ def test_log_residual_minors_survive_ten_decades():
 def test_ylog_density_is_measured_in_log_display_space():
     _, axes, _ = render_plot({"x": np.ones(5), "y": np.geomspace(1e-10, 1, 5)},
                              kind="point-line", x="x", y="y", yscale="log", size="double")
-    assert axes.lines[0].get_markersize() == 5
+    assert axes.lines[0].get_markersize() == 6.2
     assert axes.lines[0].get_linewidth() == 1.8
 
 
@@ -254,8 +254,8 @@ def test_sparse_scatter_size_is_independent_of_overlapping_dense_series():
     frame = pd.DataFrame({"x": np.r_[sparse, dense], "y": np.ones(1006),
                           "series": ["sparse"] * 5 + ["dense"] * 1001})
     _, axes, _ = render_plot(frame, kind="scatter", x="x", y="y", group="series", size="double")
-    np.testing.assert_array_equal(axes.collections[0].get_sizes(), [5.5 ** 2] * 5)
-    np.testing.assert_array_equal(axes.collections[1].get_sizes(), [4.5 ** 2] * 1001)
+    np.testing.assert_array_equal(axes.collections[0].get_sizes(), [6.2 ** 2] * 5)
+    np.testing.assert_array_equal(axes.collections[1].get_sizes(), [5.0 ** 2] * 1001)
     assert axes.collections[0].get_alpha() == 1
     assert axes.collections[1].get_alpha() == .85
 

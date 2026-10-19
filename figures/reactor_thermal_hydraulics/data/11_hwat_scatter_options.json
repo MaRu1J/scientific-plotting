@@ -1,0 +1,26 @@
+{
+  "kind": "scatter",
+  "title": "径向测点相态关系 / Radial measurement phase relation",
+  "xlabel": "空泡份额 / Void fraction (−)",
+  "ylabel": "速度 / Velocity (m/s)",
+  "size": "double",
+  "dpi": 300,
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "series_styles": {
+    "实验 / Exp. R09": {
+      "color": "#126b80",
+      "marker": "o"
+    },
+    "实验 / Exp. R10": {
+      "color": "#b16a25",
+      "marker": "s"
+    },
+    "实验 / Exp. R13": {
+      "color": "#75629b",
+      "marker": "^"
+    }
+  }
+}

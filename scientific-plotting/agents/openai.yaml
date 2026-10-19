@@ -1,0 +1,5 @@
+interface:
+  display_name: "Scientific Plotting"
+  short_description: "Draw publication-style scientific figures"
+  default_prompt: "Use $scientific-plotting to draw a publication-style figure from my data table."
+  brand_color: "#2F6DB5"

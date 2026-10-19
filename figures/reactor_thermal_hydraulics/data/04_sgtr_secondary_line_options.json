@@ -1,0 +1,22 @@
+{
+  "kind": "line",
+  "title": "蒸汽发生器破管瞬态 / SGTR secondary pressure",
+  "xlabel": "时间 / Time (s)",
+  "ylabel": "蒸汽压力 / Steam pressure (MPa)",
+  "size": "double",
+  "dpi": 300,
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "series_styles": {
+    "计算 / Calc. SG A": {
+      "color": "#126b80",
+      "linestyle": "-"
+    },
+    "计算 / Calc. SG B": {
+      "color": "#b16a25",
+      "linestyle": "--"
+    }
+  }
+}

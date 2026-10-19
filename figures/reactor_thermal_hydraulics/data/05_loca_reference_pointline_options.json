@@ -1,0 +1,24 @@
+{
+  "kind": "point-line",
+  "title": "事故与数值基线 / Accident vs numerical baseline",
+  "xlabel": "时间 / Time (s)",
+  "ylabel": "一回路压力 / Pressure (MPa)",
+  "size": "double",
+  "dpi": 300,
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "series_styles": {
+    "计算 / Calc. LOCA 10": {
+      "color": "#126b80",
+      "linestyle": "-",
+      "marker": "o"
+    },
+    "参考 / Ref. normal": {
+      "color": "#b16a25",
+      "linestyle": "--",
+      "marker": "s"
+    }
+  }
+}

@@ -2,6 +2,20 @@
 
 科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 PNG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标与参考误差子图。
 
+## 仓库
+
+GitHub 仓库名是 `scientific-plotting`。可安装的 Skill 在 `scientific-plotting/`，仓库根目录的说明、示例、测试和图集不是 Skill 本体。
+
+公开仓库建好后，用 Codex 的安装脚本安装（把 `<OWNER>` 换成 GitHub 用户名）：
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo <OWNER>/scientific-plotting \
+  --path scientific-plotting
+```
+
+Skill 会装到 `${CODEX_HOME:-$HOME/.codex}/skills/scientific-plotting`，下一轮对话用 `$scientific-plotting`。也可以把 `scientific-plotting` 目录复制或链接到同一位置。本仓库不修改 Codex 的全局配置。
+
 ## 安装和使用
 
 建议 Python 3.10+，在本仓库运行：
@@ -125,16 +139,32 @@ audit = figure.scientific_metadata
 
 这里 `observations`/`styles` 是调用方自己的长表和配置；可用图集 CSV 与对应 `*_styles.json` 实例化。有符号误差 `y-ref`，绝对误差 `abs(y-ref)`，相对误差 `(y-ref)/abs(ref)`（比例而非百分比）。默认**严格匹配坐标和顺序**，不是按等长行号相减；只有显式指定 `linear` 才在线性数据坐标中插值参考，参考必须严格递增且唯一，禁止外推。相对误差参考为零仅支持明确报错（`zero_reference='raise'`），不加 epsilon、不掩码、不删零点；可选择绝对误差。下图纵轴始终线性、横轴与主图共享，视觉身份跟随主图，不添加拟合、平滑、误差棒或置信区间。
 
-自动线宽/点径现在按**每个系列最终坐标框中的相邻点间距**独立判断，包含对数变换和图例外置后的坐标框变化。修复旧逻辑把多系列间距的中位数再次混合的问题；不会因为密集 DNS 或重合的另一组缩小稀疏组。空心/实心及透明度约定不变，未抽稀、未跳过标记。散点的密度判断同样局限在自身系列。因修复尺寸/布局，旧输入的 PNG 不保证与旧母板字节一致；旧快照的离线复现不受影响。
+自动线宽/点径现在按**每个系列最终坐标框中的相邻点间距**独立判断，包含对数变换和图例外置后的坐标框变化。修复旧逻辑把多系列间距的中位数再次混合的问题；不会因为密集 DNS 或重合的另一组缩小稀疏组。点线图标记现为实心，足够大时加白边，不再使用稀疏空心环；未抽稀、未跳过标记。散点的密度判断同样局限在自身系列。因修复尺寸/布局，旧输入的 PNG 不保证与旧母板字节一致；旧快照的离线复现不受影响。
 
 限制：仍可能存在真实密点重叠；误差面板会减少主图可用高度，单栏长图例尤需检查实际印刷尺寸；不提供局部放大、自动平滑/拟合、外推或零参考替换策略。Kawamura 的 mean/uu/ww 和 vv/-uv 始终保留各自交错网格。合成 CFD、测量及残差仅用于绘图检验，不能据此宣称求解器或实验精度得到验证。
 
+## 热工水力真实数据测试
+
+`figures/reactor_thermal_hydraulics/index.html` 提供 14 张真实公开数据图：4 张 `line`、6 张 `point-line`（合计 71.43%），其余 `scatter`、`bar`、`heatmap`、`violin` 各一张。使用 NPPAD 的 PCTRAN 事故模拟、KTH/HWAT 实验数据（DOI: 10.5281/zenodo.14627088）及官方 IAPWS 饱和温度参照；不伪造同工况计算–实验验证对。中文标题和坐标通过字体回退支持，原 skill 保持不变。
+
+```bash
+.venv/bin/python examples/plot_reactor_thermal_hydraulics.py
+.venv/bin/python figures/reactor_thermal_hydraulics/reproduce.py --output-dir /tmp/reactor-replay
+.venv/bin/python -m pytest -q tests/test_reactor_thermal_hydraulics.py
+```
+
+默认离线读取已缓存原始文件，并核对 SHA-256 和发布者 XML MD5。完整说明见图集 `REPORT.md`、`VALIDATION.md` 和 `sources.lock.json`。特别记录径向坐标单位歧义、同高度多热电偶、仅时序点线图抽样，以及原模板 grouped-bar 图例同步的已知失败；此图集用原生非分组 bar 和显式外置图例，不掩盖失败。
+
 ## 风格和贡献
 
-默认 Arial（缺失时会警告并改用 Liberation Sans），可选 `--font 'Times New Roman'`（缺失时警告并改用 Liberation Serif）。单幅图依参考图采用约 4:3 的画布：`single` 为 89 × 66 mm，`double` 为 183 × 136 mm；点线图等会留出更接近参考图的坐标框四周空间，而不是把坐标框撑满画布。有序时间组采用琥珀黄、黄绿、绿色到深蓝绿的渐变，避免亮黄在白底上不清楚；互不相关的方法则使用另一组克制的分类色。线型和点形辅助黑白辨识。点线图按同一系列相邻点的成图间距调整粗细（不会因其他系列靠近就缩小标记），散点图独立保持可辨认的点大小；密集点使用有限的透明度而不删除数据。如自动尺寸不合适，可分别指定 `--line-width 1.8`（线宽，pt）和 `--marker-size 5`（标记直径，pt；散点面积为直径平方）；Python API 用 `line_width` 和 `marker_size`。四边坐标轴、朝内刻度、主实次虚网格及图例规则见 [风格约定](scientific-plotting/references/style.md)。需要根据新机器安装依赖或替代字体可以直接做；若要改变其他风格，先明确提出要求并检查结果，不要因为缺字体或图例密集就偷偷更改规则。
+默认 Arial（缺失时会警告并改用 Liberation Sans），可选 `--font 'Times New Roman'`（缺失时警告并改用 Liberation Serif）。单幅图依参考图采用约 4:3 的画布：`single` 为 89 × 66 mm，`double` 为 183 × 136 mm；点线图等会留出更接近参考图的坐标框四周空间，而不是把坐标框撑满画布。有序时间组仍从琥珀黄走到深蓝绿，但各档更深、明度拉开，避免亮黄和相邻色糊在一起；组数不是 5 时在 Oklab 中插值。不同方法使用另一组区分度更高的分类色（蓝、橙、绿、品红，以及橄榄、红、靛蓝、灰）。线型和点形继续负责黑白辨识。点线图按同一系列相邻点的成图间距调整粗细（不会因其他系列靠近就缩小标记）：稀疏约 6.2 pt、普通约 5.0 pt、较密约 3.8 pt、极密约 2.6 pt，标记为实心，直径不小于 3.6 pt 时加白边。默认点形是圆、方、上三角、菱形、下三角、五边形。散点图独立使用约 6.2 / 5.0 pt 的实心点；密集点使用有限的透明度而不删除数据。如自动尺寸不合适，可分别指定 `--line-width 1.8`（线宽，pt）和 `--marker-size 5`（标记直径，pt；散点面积为直径平方）；Python API 用 `line_width` 和 `marker_size`。四边坐标轴、朝内刻度、主实次虚网格及图例规则见 [风格约定](scientific-plotting/references/style.md)。需要根据新机器安装依赖或替代字体可以直接做；若要改变其他风格，先明确提出要求并检查结果，不要因为缺字体或图例密集就偷偷更改规则。
 
 字号以**实际排版宽度**为准：单栏图（89 mm）坐标名称 10 pt、刻度及图例 8.5 pt；双栏图和多面板档（183 mm）坐标名称 11 pt、刻度及图例 9.5 pt。插入论文时不要把双栏图缩成单栏图，否则文字也会等比变小；应直接选择 `--size single` 重绘。具体期刊的图稿要求如有不同，请按其要求明确调整。
 
-四个参考仓库的星标快照、许可证和借鉴边界见 [参考记录](scientific-plotting/references/sources.md)。这里没有拷贝其代码或图像，尚未发布远程仓库。
+高星绘图仓库和早期参考的借鉴边界见 [参考记录](scientific-plotting/references/sources.md)。这里没有拷贝其代码、色表或图像。
 
-测试：安装 `pytest` 后运行 `python -m pytest -q`，并在最终尺寸下查看样图，确认图例、标签及四边刻度未被裁切。若希望 Codex 自动识别此 Skill，可把 `scientific-plotting` 目录链接或复制到 `${CODEX_HOME:-$HOME/.codex}/skills/`；仓库本身不修改用户的全局配置。
+测试：安装 `pytest` 后运行 `python -m pytest -q`，并在最终尺寸下查看样图，确认图例、标签及四边刻度未被裁切。
+
+## 许可
+
+绘图代码和 Skill 以 MIT 许可发布，版权人为 RuiJin Ma，2026，见仓库根目录 `LICENSE`。图集里的第三方数据仍使用各自的原始许可和署名，记录在对应 `REPORT.md` 与 `sources.lock.json`。IAPWS IF97 修订版 PDF 不放入仓库；需要离线复现热工水力图集时，用官方地址补齐 `figures/reactor_thermal_hydraulics/raw/IF97-Rev.pdf`，或运行该示例的 `--download`。

@@ -7,6 +7,7 @@ import warnings
 os.environ["MPLBACKEND"] = "Agg"
 
 import matplotlib.pyplot as plt
+from matplotlib import colors
 import numpy as np
 import pandas as pd
 import pytest
@@ -16,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "scientific-plotting" / "scripts" / "plot_template.py"
 sys.path.insert(0, str(TEMPLATE.parent))
 
-from plot_template import ORDERED_COLORS, TEXT_SIZES_PT, _line_vertices, render_plot, resolve_font
+from plot_template import (CATEGORICAL_COLORS, MARKERS, ORDERED_COLORS, SCATTER_DENSE_PT, SCATTER_SPARSE_PT,
+                           TEXT_SIZES_PT, _line_vertices, _palette, connected_stroke, render_plot, resolve_font)
 
 
 @pytest.fixture
@@ -94,6 +96,35 @@ def test_ordered_palette_trends_yellow_to_teal_and_differs_from_methods():
     assert [line.get_color() for line in method_axes.lines] != ordered_colors
     plt.close(ordered_figure)
     plt.close(method_figure)
+
+
+
+def test_palettes_keep_contrast_and_point_line_shapes():
+    def naive_luma(color):
+        return sum(component * weight for component, weight in zip(colors.to_rgb(color), (0.2126, 0.7152, 0.0722)))
+
+    def relative_luminance(color):
+        def linearize(channel):
+            return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+        red, green, blue = colors.to_rgb(color)
+        return 0.2126 * linearize(red) + 0.7152 * linearize(green) + 0.0722 * linearize(blue)
+
+    ordered_luma = [naive_luma(color) for color in ORDERED_COLORS]
+    assert all(first - second >= 0.025 for first, second in zip(ordered_luma, ordered_luma[1:]))
+    hues = [colors.rgb_to_hsv(colors.to_rgb(color))[0] for color in ORDERED_COLORS]
+    assert hues[0] < 0.15 < hues[-1]
+    assert all(earlier < later for earlier, later in zip(hues, hues[1:]))
+    for color in (*ORDERED_COLORS, *CATEGORICAL_COLORS):
+        assert 1.05 / (relative_luminance(color) + 0.05) >= 3.4
+    samples = [np.array(colors.to_rgb(color)) for color in CATEGORICAL_COLORS]
+    distances = [np.linalg.norm(samples[left] - samples[right])
+                 for left in range(len(samples)) for right in range(left + 1, len(samples))]
+    assert min(distances) >= 0.22
+    assert MARKERS == ("o", "s", "^", "D", "v", "p")
+    blended = _palette(4, ordered=True)
+    blended_luma = [naive_luma(color) for color in blended]
+    assert blended[0] == ORDERED_COLORS[0] and blended[-1] == ORDERED_COLORS[-1]
+    assert all(earlier > later for earlier, later in zip(blended_luma, blended_luma[1:]))
 
 
 def test_inward_ticks_and_two_grid_styles(observations):
@@ -274,11 +305,14 @@ def test_point_line_marks_and_strokes_follow_display_density():
                                                    "y": np.sin(np.linspace(0, 4, 400))},
                                                  kind="point-line", x="x", y="y")
     assert sparse_axes.lines[0].get_linewidth() == 1.8
-    assert sparse_axes.lines[0].get_markersize() == 5.0
-    assert sparse_axes.lines[0].get_markerfacecolor() == "white"
+    assert sparse_axes.lines[0].get_markersize() == 6.2
+    assert sparse_axes.lines[0].get_marker() == "o"
+    assert colors.to_rgb(sparse_axes.lines[0].get_markerfacecolor()) == colors.to_rgb(sparse_axes.lines[0].get_color())
+    assert colors.to_rgb(sparse_axes.lines[0].get_markeredgecolor()) == colors.to_rgb("white")
     assert dense_axes.lines[0].get_linewidth() == 1.2
-    assert dense_axes.lines[0].get_markersize() == 2.4
-    assert dense_axes.lines[0].get_markerfacecolor() == dense_axes.lines[0].get_color()
+    assert dense_axes.lines[0].get_markersize() == 2.6
+    assert colors.to_rgb(dense_axes.lines[0].get_markerfacecolor()) == colors.to_rgb(dense_axes.lines[0].get_color())
+    assert colors.to_rgb(dense_axes.lines[0].get_markeredgecolor()) == colors.to_rgb(dense_axes.lines[0].get_color())
     assert len(dense_axes.lines[0].get_xdata()) == 400
     plt.close(sparse_figure)
     plt.close(dense_figure)
@@ -293,7 +327,7 @@ def test_overlapping_series_do_not_shrink_well_spaced_lines():
         scatter_figure, scatter_axes, _ = render_plot(shared, kind="scatter", x="x", y="y")
     assert all(line.get_linewidth() == 1.8 for line in line_axes.lines)
     assert all(line.get_marker() == "None" for line in line_axes.lines)
-    assert np.all(scatter_axes.collections[0].get_sizes() == 4.5 ** 2)
+    assert np.all(scatter_axes.collections[0].get_sizes() == SCATTER_DENSE_PT ** 2)
     plt.close(line_figure)
     plt.close(scatter_figure)
 
@@ -306,8 +340,8 @@ def test_scatter_markers_remain_visible_as_points_get_dense():
         dense_figure, dense_axes, _ = render_plot({"x": np.linspace(0, 3, 400),
                                                    "y": np.sin(np.linspace(0, 3, 400))},
                                                  kind="scatter", x="x", y="y")
-    assert np.all(sparse_axes.collections[0].get_sizes() == 5.5 ** 2)
-    assert np.all(dense_axes.collections[0].get_sizes() == 4.5 ** 2)
+    assert np.all(sparse_axes.collections[0].get_sizes() == SCATTER_SPARSE_PT ** 2)
+    assert np.all(dense_axes.collections[0].get_sizes() == SCATTER_DENSE_PT ** 2)
     assert len(dense_axes.collections[0].get_offsets()) == 400
     assert dense_axes.collections[0].get_alpha() == 0.85
     plt.close(sparse_figure)
@@ -323,7 +357,8 @@ def test_close_other_series_do_not_shrink_point_line_markers():
         figure, axes, _ = render_plot(points, kind="point-line", x="year", y="value",
                                      group="series", size="double")
     assert all(line.get_linewidth() == 1.8 for line in axes.lines)
-    assert all(line.get_markersize() == 5.0 for line in axes.lines)
+    assert all(line.get_markersize() == 6.2 for line in axes.lines)
+    assert [line.get_marker() for line in axes.lines] == ["o", "s"]
     plt.close(figure)
 
 

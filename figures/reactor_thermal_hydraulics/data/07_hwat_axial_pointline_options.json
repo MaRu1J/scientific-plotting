@@ -1,0 +1,29 @@
+{
+  "kind": "point-line",
+  "title": "沸腾回路轴向壁温 / Axial wall temperature",
+  "xlabel": "轴向高度 / Axial height z (m)",
+  "ylabel": "壁面温度 / Wall T (°C)",
+  "size": "double",
+  "dpi": 300,
+  "x": "x",
+  "y": "y",
+  "group": "series",
+  "group_kind": "categorical",
+  "series_styles": {
+    "实验 / Exp. R09": {
+      "color": "#126b80",
+      "linestyle": "-",
+      "marker": "o"
+    },
+    "实验 / Exp. R10": {
+      "color": "#b16a25",
+      "linestyle": "--",
+      "marker": "s"
+    },
+    "实验 / Exp. R13": {
+      "color": "#75629b",
+      "linestyle": "-.",
+      "marker": "^"
+    }
+  }
+}

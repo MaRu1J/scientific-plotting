@@ -1,0 +1,67 @@
+{
+  "figure_count": 14,
+  "kind_counts": {
+    "point-line": 6,
+    "line": 4,
+    "bar": 1,
+    "scatter": 1,
+    "heatmap": 1,
+    "violin": 1
+  },
+  "line_pointline_fraction": 0.7142857142857143,
+  "all_checks_pass": true,
+  "chinese_font": "Noto Sans CJK JP",
+  "template_sha256": "1cb6e812464118d084e706263ba5366f4b2dd018d29065e1af785dadce6fbe5a",
+  "iapws_check_pressures_mpa": [
+    0.1,
+    1,
+    10
+  ],
+  "iapws_check_temperatures_k": [
+    372.7559186113376,
+    453.0356323914666,
+    584.1494879985282
+  ],
+  "nppad_source_rows": {
+    "LOCA_1": 475,
+    "LOCA_10": 425,
+    "LOCA_50": 343,
+    "SGBTR_10": 494,
+    "Normal_1": 302
+  },
+  "nppad_void_min_percent": {
+    "LOCA_1": -5.449098807730479e-06,
+    "LOCA_10": -4.957202691002749e-06,
+    "LOCA_50": -4.539912424661452e-06,
+    "SGBTR_10": -5.252278242551256e-06,
+    "Normal_1": -5.36425568498089e-06
+  },
+  "hwat_boundaries": {
+    "09": {
+      "PRESSURE": 7267553.4634,
+      "TIN": 158.7685,
+      "MASSFLOW": 0.1935,
+      "MASSFLUX": 697.0522,
+      "XIN": -0.40787,
+      "XOUT": 0.18398
+    },
+    "10": {
+      "PRESSURE": 7188785.5533,
+      "TIN": 159.1031,
+      "MASSFLOW": 0.1934,
+      "MASSFLUX": 696.7067,
+      "XIN": -0.40289,
+      "XOUT": 0.18246
+    },
+    "13": {
+      "PRESSURE": 7141669.8625,
+      "TIN": 201.7501,
+      "MASSFLOW": 0.19603,
+      "MASSFLUX": 706.1656,
+      "XIN": -0.27552,
+      "XOUT": 0.30944
+    }
+  },
+  "hwat_zenodo_md5_verified": true,
+  "primary_pressure_unit_verified_from_mdb": true
+}
