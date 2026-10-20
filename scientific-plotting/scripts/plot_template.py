@@ -10,6 +10,7 @@ import inspect
 import json
 import platform
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -1307,7 +1308,7 @@ def _all_axes(figure) -> list:
 def _visible_text(figure) -> list:
     texts = [text for text in figure.texts if text.get_visible()]
     for axes in _all_axes(figure):
-        texts.extend([axes.title, axes.xaxis.label, axes.yaxis.label,
+        texts.extend([axes.title, axes._left_title, axes._right_title, axes.xaxis.label, axes.yaxis.label,
                       axes.xaxis.get_offset_text(), axes.yaxis.get_offset_text(), *axes.texts,
                       *axes.get_xticklabels(which="both"), *axes.get_yticklabels(which="both")])
         legend = axes.get_legend()
@@ -1318,14 +1319,42 @@ def _visible_text(figure) -> list:
     return [text for text in texts if text.get_visible() and text.get_text().strip()]
 
 
+def _canvas_text_findings(figure) -> list[dict]:
+    titles = []
+    annotations = [text for text in figure.texts if text.get_visible()]
+    suptitle = getattr(figure, "_suptitle", None)
+    if suptitle is not None and suptitle.get_visible() and suptitle.get_text().strip():
+        titles.append(suptitle.get_text())
+    for axes in _all_axes(figure):
+        if not axes.get_visible():
+            continue
+        titles.extend(text.get_text() for text in (axes.title, axes._left_title, axes._right_title)
+                      if text.get_visible() and text.get_text().strip())
+        annotations.extend(text for text in axes.texts if text.get_visible())
+    findings = []
+    if titles:
+        findings.append({**_finding(
+            "warn", "canvas_title", "Visible figure/panel/inset titles are not part of the default style. "
+            "Confirm they were explicitly requested; otherwise move them to an external caption. Titles were kept.",
+            measured=list(dict.fromkeys(titles))), "category": "style"})
+    sources = [text.get_text() for text in annotations if re.search(
+        r"^\s*(?:sources?|data\s+sources?|来源|数据来源|数据源)\s*[:：]", text.get_text(), re.IGNORECASE | re.MULTILINE)]
+    if sources:
+        findings.append({**_finding(
+            "warn", "canvas_source", "Source/citation text on the canvas is not part of the default style. "
+            "Preserve attribution in an external caption or metadata unless explicitly requested on the image. Text was kept.",
+            measured=list(dict.fromkeys(sources))), "category": "style"})
+    return findings
+
+
 def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> list[dict]:
-    """Report differences from the dated journal snapshot. Never a compliance verdict."""
+    """Report snapshot differences and default-style reminders, never a compliance verdict."""
     metadata = getattr(figure, "scientific_metadata", {}) or {}
     journal = journal or metadata.get("journal") or "elsevier"
     if journal not in JOURNALS:
         raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
     preset = JOURNALS[journal]
-    findings = []
+    findings = _canvas_text_findings(figure)
     width = float(metadata.get("width_mm", figure.get_figwidth() * 25.4))
     height = float(metadata.get("height_mm", figure.get_figheight() * 25.4))
     if not _near(width, preset["widths_mm"]):
@@ -1536,7 +1565,7 @@ def _inspect_export(path: Path, figure, format_name: str, dpi: int) -> tuple[dic
 
 def _write_review(figure, paths: list[Path], requested_font: str, notices: list[str]) -> list[Path]:
     metadata = figure.scientific_metadata
-    findings = [{**finding, "category": "journal_snapshot"} for finding in review_figure(figure)]
+    findings = [{"category": "journal_snapshot", **finding} for finding in review_figure(figure)]
     findings.extend(_grayscale_findings(figure))
     for message in dict.fromkeys(notices):
         finding = _finding("warn", "runtime_notice", message)
