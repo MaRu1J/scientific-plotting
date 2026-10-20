@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import argparse
+from functools import wraps
+import hashlib
+from importlib import metadata as package_metadata
+import inspect
 import json
+import platform
 from pathlib import Path
 import shutil
 import sys
+import tempfile
 import warnings
 
 import matplotlib as mpl
@@ -19,6 +25,7 @@ from matplotlib.ticker import AutoMinorLocator, LogFormatterSciNotation, LogLoca
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 import numpy as np
 import pandas as pd
+from PIL import Image
 
 
 SIZES_MM = {
@@ -89,6 +96,8 @@ ERRORBAR_CAPSIZE_PT = 2.2
 ERRORBAR_ELINEWIDTH_PT = 0.8
 _ERRORBAR_KEYS = frozenset({"x", "y", "x_lower", "x_upper", "y_lower", "y_upper",
                             "capsize", "elinewidth", "definition"})
+DELIVERY_SCHEMA_VERSION = 1
+GRAYSCALE_DISTANCE = 0.08
 
 
 def resolve_font(requested: str) -> str:
@@ -1282,6 +1291,33 @@ def _near(width: float, candidates: tuple[float, ...]) -> bool:
     return any(abs(width - candidate) < 0.2 for candidate in candidates)
 
 
+def _all_axes(figure) -> list:
+    result = []
+
+    def visit(axes):
+        result.append(axes)
+        for child in axes.child_axes:
+            visit(child)
+
+    for axes in figure.axes:
+        visit(axes)
+    return result
+
+
+def _visible_text(figure) -> list:
+    texts = [text for text in figure.texts if text.get_visible()]
+    for axes in _all_axes(figure):
+        texts.extend([axes.title, axes.xaxis.label, axes.yaxis.label,
+                      axes.xaxis.get_offset_text(), axes.yaxis.get_offset_text(), *axes.texts,
+                      *axes.get_xticklabels(which="both"), *axes.get_yticklabels(which="both")])
+        legend = axes.get_legend()
+        if legend is not None:
+            texts.extend(legend.get_texts())
+    for legend in figure.legends:
+        texts.extend(legend.get_texts())
+    return [text for text in texts if text.get_visible() and text.get_text().strip()]
+
+
 def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> list[dict]:
     """Report differences from the dated journal snapshot. Never a compliance verdict."""
     metadata = getattr(figure, "scientific_metadata", {}) or {}
@@ -1329,23 +1365,13 @@ def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> l
             "info", "aspect",
             "Height leaves the 4:3 preset. Record why 4:3 could not show the data.",
             measured=height, expected=SIZES_MM[metadata["size"]][1]))
-    sizes = []
-    for axes in figure.axes:
-        candidates = [axes.xaxis.label, axes.yaxis.label, *axes.get_xticklabels(), *axes.get_yticklabels()]
-        legend = axes.get_legend()
-        if legend is not None:
-            candidates.extend(legend.get_texts())
-        for text in candidates:
-            if text.get_visible() and text.get_text().strip():
-                sizes.append(float(text.get_fontsize()))
-    for legend in figure.legends:
-        sizes.extend(float(text.get_fontsize()) for text in legend.get_texts() if text.get_text().strip())
+    sizes = [float(text.get_fontsize()) for text in _visible_text(figure)]
     if sizes and min(sizes) + 1e-6 < preset["min_type_pt"]:
         findings.append(_finding(
             "warn", "type",
             f"Smallest text is {min(sizes):g} pt, below the {journal} snapshot minimum of {preset['min_type_pt']} pt.",
             measured=min(sizes), expected=preset["min_type_pt"]))
-    for axes in figure.axes:
+    for axes in _all_axes(figure):
         for line in axes.lines:
             if getattr(line, "_scientific_errorbar", False):
                 continue
@@ -1406,6 +1432,557 @@ def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> l
                     measured=count, expected=1))
     figure.scientific_review = findings
     return findings
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _json_write(path: Path, payload) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def _font_record(figure, requested: str) -> dict:
+    faces = {}
+    for text in _visible_text(figure):
+        path = Path(font_manager.findfont(text.get_fontproperties()))
+        key = path.name
+        if key not in faces:
+            faces[key] = {"family": font_manager.FontProperties(fname=str(path)).get_name(),
+                          "file": key, "sha256": _sha256(path) if path.is_file() else None}
+    return {"requested": requested, "resolved": list(faces.values()),
+            "limitation": "Font files describe resolved text faces; per-glyph and math fallback require visual inspection."}
+
+
+def _grayscale_findings(figure) -> list[dict]:
+    findings = []
+    for panel_number, axes in enumerate(figure.axes, 1):
+        series = [artist for artist in (*axes.lines, *axes.collections)
+                  if hasattr(artist, "_scientific_identity") and not getattr(artist, "_scientific_guide", False)]
+        for index, first in enumerate(series):
+            for second in series[index + 1:]:
+                first_id, second_id = first._scientific_identity, second._scientific_identity
+                luminance = [sum(channel * weight for channel, weight in
+                                 zip(colors.to_rgb(identity[1]), (0.2126, 0.7152, 0.0722)))
+                             for identity in (first_id, second_id)]
+                distance = abs(luminance[0] - luminance[1])
+                if distance >= GRAYSCALE_DISTANCE:
+                    continue
+                redundant = first_id[2:] != second_id[2:]
+                labels = [first.get_label(), second.get_label()]
+                finding = _finding("info" if redundant else "warn", "grayscale",
+                                   f"Panel {panel_number}, series {labels!r}: similar grayscale luminance; "
+                                   + ("marker/dash differences provide backup; inspect at print width."
+                                      if redundant else "no distinct marker/dash backup; inspect at print width."),
+                                   measured={"series": labels, "luminance_distance": distance,
+                                             "marker_or_dash_backup": redundant}, expected=GRAYSCALE_DISTANCE)
+                finding["category"] = "heuristic"
+                findings.append(finding)
+    return findings
+
+
+def _inspect_export(path: Path, figure, format_name: str, dpi: int) -> tuple[dict, list]:
+    record = {"file": path.name, "requested_format": format_name, "requested_dpi": dpi}
+    findings = []
+
+    def error(rule, message, measured=None, expected=None):
+        finding = _finding("error", rule, f"{path.name}: {message}", measured, expected)
+        finding["category"] = "actual_file"
+        findings.append(finding)
+
+    try:
+        with Image.open(path) as image:
+            image.load()
+            try:
+                resolutions = [float(value) for value in image.info.get("dpi", ())]
+            except (TypeError, ValueError, OverflowError):
+                resolutions = []
+            record.update({"format": image.format, "mode": image.mode, "pixels": list(image.size),
+                           "dpi": [value if np.isfinite(value) else None for value in resolutions],
+                           "opaque_alpha": image.getchannel("A").getextrema() == (255, 255)
+                           if "A" in image.getbands() else None})
+        metadata = getattr(figure, "scientific_metadata", {})
+        requested_mm = [metadata.get("width_mm", figure.get_figwidth() * 25.4),
+                        metadata.get("height_mm", figure.get_figheight() * 25.4)]
+        expected_pixels = [float(size) / 25.4 * dpi for size in requested_mm]
+        record.update(requested_physical_mm=requested_mm, requested_pixels=expected_pixels)
+        if record["format"] != {"jpeg": "JPEG", "tiff": "TIFF"}[format_name]:
+            error("file_format", "actual format differs from the request.", record["format"], format_name)
+        if any(abs(actual - expected) > 1.01 for actual, expected in zip(record["pixels"], expected_pixels)):
+            error("file_pixels", "pixel dimensions differ from the request (one-pixel tolerance).",
+                  record["pixels"], expected_pixels)
+        actual_dpi = record["dpi"]
+        if len(actual_dpi) != 2 or any(value is None or value <= 0 or abs(value - dpi) > 0.05
+                                       for value in actual_dpi):
+            error("file_dpi", "DPI is missing or differs from the request.", actual_dpi, dpi)
+        else:
+            record["physical_mm"] = [pixels / resolution * 25.4
+                                     for pixels, resolution in zip(record["pixels"], actual_dpi)]
+        expected_modes = ("RGB", "RGBA") if format_name == "tiff" else ("RGB",)
+        if record["mode"] not in expected_modes or record["opaque_alpha"] is False:
+            finding = _finding("warn", "file_color", f"{path.name}: inspect unexpected color mode or transparency.",
+                               measured=record["mode"], expected=list(expected_modes))
+            finding["category"] = "actual_file"
+            findings.append(finding)
+        record["sha256"] = _sha256(path)
+    except (OSError, ValueError, TypeError, SyntaxError) as exc:
+        error("file_decode", f"cannot fully decode exported image ({type(exc).__name__}).")
+    return record, findings
+
+
+def _write_review(figure, paths: list[Path], requested_font: str, notices: list[str]) -> list[Path]:
+    metadata = figure.scientific_metadata
+    findings = [{**finding, "category": "journal_snapshot"} for finding in review_figure(figure)]
+    findings.extend(_grayscale_findings(figure))
+    for message in dict.fromkeys(notices):
+        finding = _finding("warn", "runtime_notice", message)
+        finding["category"] = "runtime"
+        findings.append(finding)
+    exports = []
+    for path, format_name in zip(paths, metadata["formats"]):
+        record, file_findings = _inspect_export(path, figure, format_name, metadata["dpi_by_format"][format_name])
+        exports.append(record)
+        findings.extend(file_findings)
+    fonts = _font_record(figure, requested_font)
+    manual = ["Check units, reference identity, scientific meaning and caption against the source data.",
+              "Inspect legend/data overlap, inset placement and grayscale distinction at final physical width.",
+              "Inspect glyph/math fallback and any journal requirements absent from this dated snapshot."]
+    report = {"schema_version": DELIVERY_SCHEMA_VERSION, "snapshot_date": SNAPSHOT_DATE,
+              "journal": metadata["journal"], "scope": "Figure properties and actual JPEG/TIFF exports; not a submission verdict.",
+              "fonts": fonts, "exports": exports, "findings": findings, "manual_checks": manual,
+              "grayscale_heuristic": {"threshold": GRAYSCALE_DISTANCE,
+                                      "formula": "abs(delta(0.2126 R + 0.7152 G + 0.0722 B)), encoded sRGB",
+                                      "limitation": "Series-only screening, not a color-vision certification; no automatic styling changes."}}
+    target = paths[0].with_suffix("")
+    report_paths = [target.with_name(target.name + "_review.json"), target.with_name(target.name + "_review.md")]
+    _json_write(report_paths[0], report)
+    lines = ["# Figure delivery review", "", report["scope"],
+             f"", f"Rule snapshot: {SNAPSHOT_DATE}; journal: {metadata['journal']}", "", "## Actual files"]
+    for record in exports:
+        lines.append(f"- {record['file']}: {record.get('format', 'unreadable')}; mode={record.get('mode')}; "
+                     f"pixels={record.get('pixels')}; DPI={record.get('dpi')}; mm={record.get('physical_mm')}")
+    lines.extend(["", "## Fonts", f"- Requested: {requested_font}"])
+    lines.extend(f"- Resolved: {face['family']} ({face['file']}); SHA-256: {face['sha256']}" for face in fonts["resolved"])
+    lines.extend(["", "## Findings"])
+    lines.extend(f"- [{finding['severity']}] {finding['category']}/{finding['rule']}: {finding['message']}"
+                 for finding in findings)
+    if not findings:
+        lines.append("- No findings from implemented checks; manual inspection is still required.")
+    lines.extend(["", "## Manual checks", *[f"- {item}" for item in manual], "",
+                  "Grayscale screening uses encoded-sRGB luminance distance < 0.08 plus marker/dash backup; "
+                  "it is heuristic, not certification."])
+    report_paths[1].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    figure.scientific_report = report
+    figure.scientific_report_paths = report_paths
+    figure.scientific_review = findings
+    if any(finding["severity"] == "error" for finding in findings):
+        raise ValueError(f"Export verification failed; saved reports at {report_paths[0]} and {report_paths[1]}.")
+    return report_paths
+
+
+def _delivery(function):
+    signature = inspect.signature(function)
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        options = bound.arguments
+        bundle = options["bundle"]
+        if options["include_data"] and bundle is None:
+            raise ValueError("include_data requires an explicit bundle directory.")
+        enabled = options["report"] or bundle is not None
+        if not enabled:
+            return function(*args, **kwargs)
+        if options["output"] is None:
+            raise ValueError("report and bundle require an explicit output path.")
+        if options.get("host_axes") is not None:
+            raise ValueError("Request report/bundle on the outer figure, not host_axes.")
+        if bundle is not None:
+            destination = Path(bundle).resolve()
+            if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+                raise ValueError("Bundle destination must be absent or an empty directory.")
+            if Path(options["output"]).resolve().is_relative_to(destination):
+                raise ValueError("Output must be outside the bundle destination.")
+        captured = []
+        try:
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always", UserWarning)
+                result = function(*args, **kwargs)
+                figure, _, paths = result
+                _write_review(figure, paths, options["font"], [str(item.message) for item in captured])
+                if bundle is not None:
+                    _write_bundle(figure, paths, options, function.__name__, destination)
+        finally:
+            for item in captured:
+                warnings.warn_explicit(item.message, item.category, item.filename, item.lineno)
+        return result
+
+    return wrapped
+
+
+def _encode_scalar(value):
+    if value is pd.NA:
+        return {"scalar": "NA"}
+    if value is pd.NaT:
+        return {"scalar": "NaT"}
+    if isinstance(value, pd.Timestamp):
+        return {"scalar": "timestamp", "value": value.isoformat()}
+    if isinstance(value, pd.Timedelta):
+        return {"scalar": "timedelta", "value": value.value}
+    if isinstance(value, np.generic):
+        scalar = value.item()
+        if isinstance(scalar, np.generic):
+            raise ValueError(f"Cannot losslessly snapshot scalar dtype {value.dtype}; no implicit conversion was applied.")
+        return _encode_scalar(scalar)
+    if isinstance(value, float) and not np.isfinite(value):
+        return {"scalar": "float", "value": repr(value)}
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, tuple):
+        return {"scalar": "tuple", "value": [_encode_scalar(item) for item in value]}
+    raise ValueError(f"Cannot losslessly snapshot scalar type {type(value).__name__}; provide a supported table explicitly.")
+
+
+def _decode_scalar(value):
+    if not isinstance(value, dict):
+        return value
+    kind = value.get("scalar")
+    if kind == "NA":
+        return pd.NA
+    if kind == "NaT":
+        return pd.NaT
+    if kind == "timestamp":
+        return pd.Timestamp(value["value"])
+    if kind == "timedelta":
+        return pd.Timedelta(value["value"], unit="ns")
+    if kind == "float" and value.get("value") in ("nan", "inf", "-inf"):
+        return float(value["value"])
+    if kind == "tuple":
+        return tuple(_decode_scalar(item) for item in value["value"])
+    raise ValueError("Unsupported snapshot scalar encoding.")
+
+
+def _encode_vector(series: pd.Series) -> dict:
+    result = {"dtype": str(series.dtype), "values": [_encode_scalar(value) for value in series]}
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        result["categories"] = _encode_index(series.cat.categories)
+        result["ordered"] = series.cat.ordered
+    if isinstance(series.dtype, pd.StringDtype):
+        result["string_storage"] = series.dtype.storage
+        result["string_na"] = _encode_scalar(series.dtype.na_value)
+    return result
+
+
+def _decode_vector(spec: dict) -> pd.Series:
+    values = [_decode_scalar(value) for value in spec["values"]]
+    dtype = spec["dtype"]
+    if dtype == "category":
+        dtype = pd.CategoricalDtype(_decode_index(spec["categories"]), ordered=spec["ordered"])
+    elif "string_storage" in spec:
+        string_options = {"storage": spec["string_storage"]}
+        if "na_value" in inspect.signature(pd.StringDtype).parameters:
+            string_options["na_value"] = _decode_scalar(spec["string_na"])
+        elif spec["string_na"] != {"scalar": "NA"}:
+            raise ValueError("This pandas version cannot preserve the snapshot string missing-value semantics.")
+        dtype = pd.StringDtype(**string_options)
+    return pd.Series(values, dtype=dtype)
+
+
+def _encode_index(index: pd.Index) -> dict:
+    if isinstance(index, pd.MultiIndex):
+        return {"kind": "multi", "levels": [_encode_index(level) for level in index.levels],
+                "codes": [code.tolist() for code in index.codes], "names": [_encode_scalar(name) for name in index.names]}
+    if isinstance(index, pd.RangeIndex):
+        return {"kind": "range", "start": index.start, "stop": index.stop, "step": index.step,
+                "name": _encode_scalar(index.name)}
+    result = {"kind": "index", "vector": _encode_vector(pd.Series(index)), "name": _encode_scalar(index.name)}
+    if isinstance(index, (pd.DatetimeIndex, pd.TimedeltaIndex)):
+        result["frequency"] = index.freqstr
+    return result
+
+
+def _decode_index(spec: dict) -> pd.Index:
+    if spec["kind"] == "multi":
+        return pd.MultiIndex(levels=[_decode_index(level) for level in spec["levels"]], codes=spec["codes"],
+                             names=[_decode_scalar(name) for name in spec["names"]])
+    if spec["kind"] == "range":
+        return pd.RangeIndex(spec["start"], spec["stop"], spec["step"], name=_decode_scalar(spec["name"]))
+    index = pd.Index(_decode_vector(spec["vector"]).array, name=_decode_scalar(spec["name"]))
+    if spec.get("frequency") is not None:
+        index.freq = spec["frequency"]
+    return index
+
+
+def _snapshot_payload(frame: pd.DataFrame) -> dict:
+    payload = {"schema_version": DELIVERY_SCHEMA_VERSION, "columns": _encode_index(frame.columns),
+               "index": _encode_index(frame.index),
+               "vectors": [_encode_vector(frame.iloc[:, index]) for index in range(frame.shape[1])]}
+    try:
+        restored = _snapshot_frame(payload)
+        pd.testing.assert_frame_equal(frame, restored, check_exact=True)
+    except (TypeError, ValueError, AssertionError) as exc:
+        raise ValueError("Cannot losslessly snapshot this table; no lossy conversion was applied.") from exc
+    return payload
+
+
+def _snapshot_frame(payload: dict) -> pd.DataFrame:
+    if payload.get("schema_version") != DELIVERY_SCHEMA_VERSION:
+        raise ValueError("Unsupported snapshot schema version.")
+    frame = pd.concat([_decode_vector(vector) for vector in payload["vectors"]], axis=1)
+    frame.columns = _decode_index(payload["columns"])
+    frame.index = _decode_index(payload["index"])
+    return frame
+
+
+def _config_value(value):
+    if isinstance(value, np.generic):
+        return _config_value(value.item())
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_config_value(item) for item in value]
+    if isinstance(value, dict) and all(isinstance(key, str) for key in value):
+        return {key: _config_value(item) for key, item in value.items()}
+    raise ValueError(f"Unsupported bundle configuration type {type(value).__name__}; no implicit conversion was applied.")
+
+
+def _recipe_inputs(options: dict, renderer: str) -> tuple[dict, dict]:
+    inputs = {}
+    excluded = {"output", "report", "bundle", "include_data", "data", "panels", "host_axes", "host_error_axes"}
+    recipe = {"renderer": renderer,
+              "options": {key: value for key, value in options.items() if key not in excluded}}
+    panel_keys = {"id", "kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
+                  "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
+                  "reference_guides", "inset", "heatmap_scale", "quantity", "unit"}
+
+    def panel_recipe(data, settings, identifier):
+        settings = dict(settings)
+        frame = _frame(data, settings["kind"])
+        matrix = settings["kind"] == "heatmap" and not any(settings.get(key) is not None for key in ("x", "y", "value"))
+        if not matrix:
+            mapping_keys = ("x", "y", "value") if settings["kind"] == "heatmap" else ("x", "y", "group")
+            if settings["kind"] == "violin":
+                mapping_keys = ("x", "y")
+            columns = [settings[key] for key in mapping_keys if settings.get(key) is not None]
+            error_bars = settings.get("error_bars")
+            if error_bars is not None:
+                error_bars = dict(error_bars)
+                for key in ("x", "y", "x_lower", "x_upper", "y_lower", "y_upper"):
+                    if key not in error_bars:
+                        continue
+                    magnitude = error_bars[key]
+                    if isinstance(magnitude, str):
+                        columns.append(magnitude)
+                    elif not np.isscalar(magnitude) and np.asarray(magnitude).ndim != 0:
+                        auxiliary_id = identifier + "_" + key + "err"
+                        inputs[auxiliary_id] = (pd.DataFrame({"magnitude": np.asarray(magnitude, dtype=float)}), False, True)
+                        error_bars[key] = {"__bundle_input__": auxiliary_id}
+                    else:
+                        error_bars[key] = float(np.asarray(magnitude))
+                settings["error_bars"] = error_bars
+            frame = frame.loc[:, list(dict.fromkeys(columns))]
+        inputs[identifier] = (frame, matrix, False)
+        settings["data"] = {"__bundle_input__": identifier}
+        return settings
+
+    if renderer == "render_plot":
+        panel = panel_recipe(options["data"], recipe["options"], "main")
+        recipe["options"] = panel
+    else:
+        recipe["panels"] = [panel_recipe(panel["data"], {key: value for key, value in panel.items() if key in panel_keys},
+                                                f"panel_{index}") for index, panel in enumerate(options["panels"])]
+    return _config_value(recipe), inputs
+
+
+def _environment_record(package_names=None) -> dict:
+    versions = {}
+    names = list(package_names) if package_names is not None else ["matplotlib", "numpy", "pandas", "Pillow"]
+    if package_names is None:
+        names.extend(name for name in ("pyarrow", "openpyxl", "xlrd") if name in sys.modules)
+    for name in names:
+        try:
+            versions[name] = package_metadata.version(name)
+        except package_metadata.PackageNotFoundError:
+            versions[name] = None
+    return {"python": platform.python_version(), "packages": versions}
+
+
+_REPLAY_LAUNCHER = '''from pathlib import Path
+import hashlib
+import json
+import sys
+
+root = Path(__file__).resolve().parent
+try:
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1:
+        raise ValueError("Unsupported bundle schema version")
+    for name, expected in manifest["files"].items():
+        path = (root / name).resolve()
+        if Path(name).is_absolute() or not path.is_relative_to(root) or not path.is_file():
+            raise ValueError("Missing or unsafe managed path: " + name)
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1048576), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != expected:
+            raise ValueError("Checksum mismatch: " + name)
+except (OSError, ValueError, KeyError, TypeError) as error:
+    raise SystemExit("Bundle verification failed: " + str(error))
+try:
+    from plot_template import replay_bundle
+except ImportError as error:
+    raise SystemExit("Missing runtime dependency: " + str(error) + ". Install dependencies manually; see requirements-recorded.txt.")
+replay_bundle(root, sys.argv[1:])
+'''
+
+
+def _write_bundle(figure, paths: list[Path], options: dict, renderer: str, destination: Path) -> None:
+    recipe, inputs = _recipe_inputs(options, renderer)
+    snapshots = {identifier: _snapshot_payload(frame) for identifier, (frame, _, _) in inputs.items()} if options["include_data"] else {}
+    environment = _environment_record()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".plot-bundle-", dir=destination.parent) as temporary:
+        staging = Path(temporary) / "bundle"
+        staging.mkdir()
+        shutil.copy2(Path(__file__).resolve(), staging / "plot_template.py")
+        (staging / "reproduce.py").write_text(_REPLAY_LAUNCHER, encoding="utf-8")
+        _json_write(staging / "recipe.json", recipe)
+        entries = []
+        for identifier, (frame, matrix, auxiliary) in inputs.items():
+            filename = f"inputs/{identifier}.json" if options["include_data"] else None
+            entries.append({"id": identifier, "file": filename, "matrix": matrix, "auxiliary": auxiliary,
+                            "columns": [_encode_scalar(column) for column in frame.columns],
+                            "rows": len(frame), "dtypes": [str(dtype) for dtype in frame.dtypes]})
+            if filename is not None:
+                (staging / "inputs").mkdir(exist_ok=True)
+                _json_write(staging / filename, snapshots[identifier])
+        artifacts = staging / "artifacts"
+        artifacts.mkdir()
+        for path in [*paths, *figure.scientific_report_paths]:
+            shutil.copy2(path, artifacts / path.name)
+        requirements = [f"{name}=={version}" for name, version in environment["packages"].items() if version is not None]
+        (staging / "requirements-recorded.txt").write_text("\n".join(requirements) + "\n", encoding="utf-8")
+        (staging / "README.md").write_text(
+            "# Scientific plotting delivery bundle\n\n"
+            + ("Input snapshots are included with explicit permission.\n" if options["include_data"] else
+               "Inputs are NOT included. This is NOT a self-contained replay bundle.\n")
+            + "\nRun `python reproduce.py`; missing inputs require `--input ID=PATH` for every listed ID.\n"
+            "External inputs: snapshot JSON or CSV; matrix CSVs must include a first row-label column.\n"
+            "Array-valued error bars have separate one-column magnitude inputs. IDs are in manifest.json.\n"
+            "Default output is replayed/figure; use --output-dir DIR to select a fresh output directory.\n"
+            "Managed files are verified before importing the pinned template. Do not edit them for replay.\n"
+            "Nothing downloads or installs automatically. Install dependencies yourself when necessary.\n"
+            "Recorded versions do not restore an environment. Fonts are recorded, not copied.\n"
+            "Checksums detect changes, not authenticity. Across environments byte-identical images are not promised.\n"
+            "Only used table columns and the selected Excel sheet are snapshotted, never the whole workbook.\n"
+            "Reports/images and labels still disclose plotted information; review the bundle before sharing.\n",
+            encoding="utf-8")
+        managed = {path.relative_to(staging).as_posix(): _sha256(path) for path in sorted(staging.rglob("*")) if path.is_file()}
+        manifest = {"schema_version": DELIVERY_SCHEMA_VERSION, "include_data": bool(options["include_data"]),
+                    "self_contained": bool(options["include_data"]), "inputs": entries, "environment": environment,
+                    "fonts": figure.scientific_report["fonts"], "files": managed,
+                    "snapshot_date": SNAPSHOT_DATE, "recipe": "recipe.json"}
+        _json_write(staging / "manifest.json", manifest)
+        if destination.exists():
+            if any(destination.iterdir()):
+                raise ValueError("Bundle destination is no longer empty; nothing was overwritten.")
+            destination.rmdir()
+        staging.rename(destination)
+    figure.scientific_bundle_path = destination
+
+
+def _bundle_path(root: Path, name: str) -> Path:
+    path = (root / name).resolve()
+    if Path(name).is_absolute() or not path.is_relative_to(root.resolve()):
+        raise ValueError("Unsafe bundle path.")
+    return path
+
+
+def _verify_bundle(root: Path) -> dict:
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != DELIVERY_SCHEMA_VERSION:
+        raise ValueError("Unsupported bundle schema version.")
+    for name, expected in manifest["files"].items():
+        path = _bundle_path(root, name)
+        if not path.is_file() or _sha256(path) != expected:
+            raise ValueError(f"Bundle checksum mismatch or missing file: {name}")
+    return manifest
+
+
+def replay_bundle(root: str | Path, argv: list[str] | None = None):
+    """Verify a delivery bundle and replay from snapshots or explicit external inputs."""
+    root = Path(root).resolve()
+    manifest = _verify_bundle(root)
+    parser = argparse.ArgumentParser(description="Replay a verified scientific-plotting delivery bundle without downloads.")
+    parser.add_argument("--input", action="append", default=[], help="Explicit replacement input ID=PATH (CSV or snapshot JSON)")
+    parser.add_argument("--output-dir", type=Path, default=root / "replayed")
+    arguments = parser.parse_args(argv)
+    replacements = {}
+    for mapping in arguments.input:
+        identifier, separator, filename = mapping.partition("=")
+        if not separator or not filename or identifier in replacements:
+            parser.error("Use one --input ID=PATH for each replacement input.")
+        replacements[identifier] = Path(filename)
+    expected_ids = {entry["id"] for entry in manifest["inputs"]}
+    if replacements.keys() - expected_ids:
+        parser.error(f"Unknown input IDs: {sorted(replacements.keys() - expected_ids)}")
+    missing = [entry["id"] for entry in manifest["inputs"] if entry["file"] is None and entry["id"] not in replacements]
+    if missing:
+        parser.error("Missing inputs; supply --input ID=PATH for: " + ", ".join(missing))
+    inputs = {}
+    for entry in manifest["inputs"]:
+        path = replacements.get(entry["id"])
+        if path is None:
+            path = _bundle_path(root, entry["file"])
+        if path.suffix.lower() == ".json":
+            frame = _snapshot_frame(json.loads(path.read_text(encoding="utf-8")))
+        elif path.suffix.lower() == ".csv":
+            frame = pd.read_csv(path, index_col=0 if entry["matrix"] else None, float_precision="round_trip")
+        else:
+            raise ValueError("Replay inputs must be snapshot JSON or CSV; export the selected Excel sheet explicitly.")
+        columns = [_decode_scalar(column) for column in entry["columns"]]
+        if list(frame.columns) != columns:
+            if not entry["matrix"] and set(columns).issubset(frame.columns):
+                frame = frame.loc[:, columns]
+            else:
+                raise ValueError(f"Input columns differ for {entry['id']}; use a typed snapshot for non-string labels.")
+        inputs[entry["id"]] = frame.iloc[:, 0].to_numpy(dtype=float) if entry["auxiliary"] else frame
+    output_dir = arguments.output_dir.resolve()
+    protected = [_bundle_path(root, name) for name in manifest["files"]]
+    if any(path.is_relative_to(output_dir) for path in protected) or (output_dir.exists() and
+            (not output_dir.is_dir() or any(output_dir.iterdir()))):
+        raise ValueError("Replay output must be a fresh/empty directory, separate from managed bundle files.")
+    current = _environment_record(manifest["environment"]["packages"])
+    if current != manifest["environment"]:
+        warnings.warn("Runtime versions differ from the recorded environment; no dependencies were installed automatically.", UserWarning)
+    recipe = json.loads(_bundle_path(root, manifest["recipe"]).read_text(encoding="utf-8"))
+
+    def restore(value):
+        if isinstance(value, dict):
+            if value.keys() == {"__bundle_input__"}:
+                return inputs[value["__bundle_input__"]]
+            return {key: restore(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [restore(item) for item in value]
+        return value
+
+    options = restore(recipe["options"])
+    options.update(output=output_dir / "figure", report=True)
+    if recipe["renderer"] == "render_plot":
+        result = render_plot(**options)
+    elif recipe["renderer"] == "render_multipanel":
+        result = render_multipanel(restore(recipe["panels"]), **options)
+    else:
+        raise ValueError("Unsupported bundle renderer.")
+    if result[0].scientific_report["fonts"] != manifest["fonts"]:
+        warnings.warn("Resolved fonts differ from the bundle; inspect the regenerated text layout.", UserWarning)
+    return result
 
 
 def _export_figure(figure, output, formats, dpi_by_format, metadata, write_metadata: bool) -> list[Path]:
@@ -1481,6 +2058,7 @@ def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size
             target.set_sizes(source.get_sizes()[:1])
 
 
+@_delivery
 def render_plot(
     data: pd.DataFrame | dict | np.ndarray,
     *,
@@ -1517,6 +2095,9 @@ def render_plot(
     apply_layout: bool = True,
     draw_legend: bool = True,
     draw_colorbar: bool = True,
+    report: bool = False,
+    bundle: str | Path | None = None,
+    include_data: bool = False,
 ) -> tuple[mpl.figure.Figure, mpl.axes.Axes, list[Path]]:
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or group_kind not in ("auto", "ordered", "categorical"):
@@ -1861,6 +2442,7 @@ def _shared_heatmap_scale(panels: list[dict], shared_colorbar) -> dict | None:
     return limits
 
 
+@_delivery
 def render_multipanel(
     panels: list[dict],
     *,
@@ -1878,6 +2460,9 @@ def render_multipanel(
     style_registry: dict | None = None,
     layout: list[list[str | None]] | None = None,
     shared_colorbar: dict | None = None,
+    report: bool = False,
+    bundle: str | Path | None = None,
+    include_data: bool = False,
 ) -> tuple[mpl.figure.Figure, list, list[Path]]:
     """Compose real panels on one journal-width canvas. Titles stay in the caption."""
     if not panels:
@@ -2033,6 +2618,17 @@ def _replace_cli_value(arguments: list[str], flag: str, value: str) -> None:
     raise ValueError(f"Missing CLI argument {flag} in reproduction command.")
 
 
+def _without_bundle_flags(arguments: list[str]) -> list[str]:
+    cleaned = []
+    iterator = iter(arguments)
+    for token in iterator:
+        if token == "--bundle":
+            next(iterator)
+        elif token != "--include-data" and not token.startswith("--bundle="):
+            cleaned.append(token)
+    return cleaned
+
+
 def _cli_error_bars(options, parser) -> dict | None:
     payload = {}
     for key, value in (("y", options.yerr), ("x", options.xerr),
@@ -2101,8 +2697,13 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--sheet", default="0", help="Excel sheet name or zero-based number")
     parser.add_argument("--index-col", help="Matrix heatmap row-label column")
     parser.add_argument("--output", type=Path, required=True, help="Output basename; suffix does not override --format")
+    parser.add_argument("--report", action="store_true", help="Save JSON/Markdown review of the actual exported files")
+    parser.add_argument("--bundle", type=Path, help="Write a delivery bundle to an absent or empty directory (implies --report)")
+    parser.add_argument("--include-data", action="store_true", help="Explicitly allow used-data snapshots in --bundle")
     parser.add_argument("--no-script", action="store_true", help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
+    if options.include_data and options.bundle is None:
+        parser.error("--include-data requires --bundle")
     if options.size == "multipanel":
         parser.error("size 'multipanel' was removed; use render_multipanel().")
     if bool(options.error_reference is not None) != bool(options.error_definition is not None):
@@ -2139,10 +2740,12 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         reference_guides=reference_guides, inset=inset,
         error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
         journal=options.journal, height_mm=options.height_mm,
+        report=options.report, bundle=options.bundle, include_data=options.include_data,
     )
     plt.close(figure)
     if not options.no_script:
         original_args = list(argv if argv is not None else sys.argv[1:])
+        original_args = _without_bundle_flags(original_args)
         _replace_cli_value(original_args, "--input", str(source))
         _replace_cli_value(original_args, "--output", str(options.output.resolve()))
         target = paths[0].with_suffix("")

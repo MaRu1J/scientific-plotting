@@ -25,6 +25,16 @@ MPLBACKEND=Agg .venv/bin/python examples/plot_algorithm_comparisons.py
 
 输出在 `figures/algorithm_comparisons/`，涵盖收敛参考阶、精度—成本、曲线放大、方法×分辨率、跨格组合图与共享色标。附带 `synthetic_caption_notes.txt` 说明全部数据是演示，不是论文复现或真实求解器性能测试。
 
+## 交付审查与便携复现
+
+- 两个 Python 接口增加 `report=False`、`bundle=None`、`include_data=False`；单图 CLI 对应 `--report`、`--bundle DIR`、`--include-data`。默认行为和三元组返回值不变，返回路径仍只含图片。
+- `report=True` 保存 `<basename>_review.json/.md`：实际解码每个 JPEG／TIFF，核对格式、像素、DPI 和物理尺寸，记录字体、运行时提醒与灰度辨识风险。错误先保存报告再报错，普通提醒不阻断交付；报告不等于期刊合规认证。
+- `bundle=DIR` 同时开启审查，保存当次母板、相对路径配置、重跑入口、图片、报告、依赖／字体版本及 SHA-256。要求明确 `output`，拒绝非空包目录；生成失败不留下半成品包。
+- **默认包不带数据、不是自包含包**：重跑须用 `--input ID=PATH` 补齐数据。仅 `include_data=True` 授权保存所用列／工作表和必要误差数组，不复制完整工作簿、字体或环境。
+- 搬迁后运行 `python /new/location/delivery/reproduce.py`；先校验受管理文件，默认写入独立的 `replayed/`。不访问网络或自动安装依赖；版本记录不等于恢复环境，校验值不证明来源真实性，跨系统不保证图片字节完全一致。
+
+两种数据模式、Python 单图／多面板示例、报告范围及快照格式见 [交付与复现说明](scientific-plotting/references/delivery.md)。原有 CLI 重跑脚本继续保留原路径行为；需要可搬迁交付时显式选择 bundle。
+
 ## 仓库
 
 GitHub 仓库名是 `scientific-plotting`。可安装的 Skill 只有 `scientific-plotting/`。仓库根目录的说明、依赖和测试不是 Skill 本体；生成图和原始数据不发布。
