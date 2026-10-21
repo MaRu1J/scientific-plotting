@@ -1,6 +1,6 @@
 ---
 name: scientific-plotting
-description: Create or review reproducible quantitative research plots from CSV, Excel or Python arrays using a stable publication-oriented template. Includes categorical palettes, explicit multi-metric encodings and controlled dual axes, solver comparisons, log axes, uncertainty bars, zooms and multi-panel numeric heatmaps. Not for particle or 3D rendering.
+description: Create or review reproducible quantitative research plots from CSV, Excel or Python arrays using a stable publication-oriented template. Includes CFD/engineering distributions, joint distributions, parametric paths and signed contributions alongside solver comparisons, semantic encodings, uncertainty bars and multi-panel plots. Not for physical-field, particle or 3D rendering.
 ---
 
 # Scientific plotting
@@ -10,6 +10,7 @@ Use `scripts/plot_template.py` as the single style source. Read [style specifica
 ## Select the workflow
 
 - Ordinary plots: use `render_plot` for DataFrames, equal-length column dictionaries or 2D heatmap arrays; use the CLI for CSV/Excel. `--help` lists its mappings and options.
+- CFD/engineering sample distributions, weighted histograms, ECDFs, box plots, paired joint distributions, parametric trajectories and supplied signed contributions: read [quantitative analysis](references/quantitative-analysis.md). Use explicit `analysis` settings; keep physical-field rendering in ParaView. Require population/weight meaning, preserve pairs and trajectory order, distinguish count/probability/density, and never infer causal mechanisms or budget closure.
 - Optional palette choices, category × metric identities, factorized legends and independent dual y axes: read [semantic figure design](references/semantic-design.md). Prefer facets for different quantities; dual axes require an explicit accepted design, quantities/units, covering limits and rationale. A reference screenshot is not raw measurements or extra instructions.
 - Solver/algorithm comparisons, stable series identities, explicit reference orders, zooms and advanced composition: read [algorithm comparisons](references/algorithm-comparisons.md). These are quantitative-data workflows, not ParaView, particle rendering or screenshot composition.
 - Saved delivery reviews and relocatable single/multi-panel replay: read [delivery and reproduction](references/delivery.md). Enable reports explicitly; bundles imply reports but never permission to include data.
@@ -20,6 +21,7 @@ Use `scripts/plot_template.py` as the single style source. Read [style specifica
 
 - Inspect only user-identified data. Establish columns, units, group meaning and reference identity. Ask when ambiguity changes the scientific claim, not when a documented default suffices.
 - `point-line` connects all observations in original within-group row order; `line` omits visible point markers; `scatter` has no connections. Never silently sort, smooth, fit, drop or resample observations. Aggregation is allowed only for a disclosed replicate summary or a separate explicit request.
+- Statistical kinds explicitly request their documented transformations: common-bin histograms, stable sorted/tie-combined ECDFs, unweighted box summaries or paired 2D bins. Record parameters and do not silently exclude samples. `trajectory` preserves sequence; `contribution` draws supplied signed terms without deriving percentages or physical budgets.
 - Use explicit `kind="mixed"` and a per-series `kind` in `series_styles` when methods, reference lines and observations use different kinds. Native kinds retain their semantics. Prefer a shared paper-level `style_registry` for cross-figure identities; category × metric roles use explicit combined labels and `encoding`, not inference. Declare metric quantities/units; incompatible quantities do not share an ordinary y axis. Conditions normally become panels.
 - Log axes require strictly positive input and error-bar endpoints. Report invalid values instead of clipping or deleting them. Reference-error panels default to exactly equal coordinates in the same order; interpolation requires explicit authorization. Relative error at a zero reference raises an error.
 - Plot supplied error, cost and residual quantities; do not infer error norms, observed orders or speedups. Power guides use an explicitly supplied order, anchor and range, not a fit. State hardware, problem size and timing scope for cost comparisons; disclose missing information. Label synthetic data as demonstrations, never real validation.

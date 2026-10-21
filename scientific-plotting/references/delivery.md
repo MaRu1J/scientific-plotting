@@ -1,5 +1,7 @@
 # Optional delivery review and portable reproduction
 
+Explicit [quantitative-analysis](quantitative-analysis.md) kinds use the same delivery path. Reports add `quantitative_analysis` per panel, containing definitions, sample counts, resolved bins/scales and weight/order settings, not raw paired arrays. Recipes preserve `analysis`; used-data snapshots additionally include named weight/order columns and still require explicit `include_data=True`. The CLI pins `--analysis-config` alongside its reproduction script. Histogram/ECDF/box/joint transformations occur only when their native kind is selected; delivery itself adds no statistical processing.
+
 Read this reference only when saving a review or preparing a relocatable delivery. Both APIs retain the established style, data semantics and `(figure, axes, image_paths)` return. JPEG remains the only default export; TIFF is explicit, and other image formats remain unsupported. No fitting, scientific metric calculation or automatic restyling is added.
 
 ## Interfaces

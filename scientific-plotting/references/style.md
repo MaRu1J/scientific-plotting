@@ -1,5 +1,9 @@
 # Scientific figure style contract
 
+## Explicit quantitative-analysis kinds
+
+`histogram`, `ecdf`, `box`, `joint`, `trajectory` and `contribution` reuse the font, frame, export and layout rules below. Their explicit statistical transformations and restrictions are defined in [quantitative analysis](quantitative-analysis.md); they are not physical-field renderers. Histograms use outline stairs; ECDFs use empirical steps; box plots retain all fliers. Box/contribution grids use only the numeric value axis; joint distributions have no overlay grid and use `cividis`. Trajectories preserve row order and mark the start; contributions retain signs and a zero baseline. These new kinds do not use the ordinary series density-adaptive stroke rules.
+
 ## Locked defaults
 
 | Aspect | Rule |

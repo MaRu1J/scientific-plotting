@@ -1,5 +1,27 @@
 # Scientific Plotting Skill
 
+## 定量分析扩展：分布、联合分布与机理分析数据图
+
+流场／温度场展示继续交给 ParaView，本 skill 接收导出的表格或数组用于定量分析。新增六种 `render_plot` 原生类型，也能放入 `render_multipanel`：
+
+- `histogram`：显式分箱的直方图，区分计数、概率与概率密度；多组共用箱边界，支持显式体积／时间等权重。
+- `ecdf`：经验累积分布，支持权重；只对副本排序并合并同值跳跃，不修改原数据。
+- `box`：非加权箱线图，展示中位数、四分位数、须和全部离群点。
+- `joint`：配对观测的二维联合分布，不是物理场云图；支持非等宽箱、显式权重和跨面板相同色限。
+- `trajectory`：按原始顺序连接参数轨迹，可验证时间列、标出起点及指定方向箭头，不自动闭环或计算滞回面积。
+- `contribution`：已计算的正负贡献／预算项，要求说明符号约定；保留正负号和零基线，不自动求预算或转百分比。
+
+配置入口为 `analysis={...}`，CLI 对应 `--analysis-config settings.json`。不默认平滑、拟合、删点或推断因果。审查、参数副本和便携复现沿用现有路径；权重列和时间列按需保存，原数据仍需显式授权打包。完整约定和代码见 [定量分析指南](scientific-plotting/references/quantitative-analysis.md)。
+
+```bash
+MPLBACKEND=Agg .venv/bin/python examples/plot_analysis_gallery.py --output figures/analysis_gallery
+MPLBACKEND=Agg .venv/bin/python -m pytest -q tests/test_analysis_plots.py
+```
+
+演示使用固定随机种子的**合成数据**，附独立图注，不代表 CFD／实验结果。示例目录必须是新位置。首版不实现 KDE、联合条件均值、自动象限贡献计算或统计置信区间。
+
+## 既有绘图能力
+
 科研数据绘图 Skill + Python 母板：保持统一风格，在不同电脑和项目里复用；默认只导出 JPEG。支持 `point-line`（按原始顺序连点）、`line`、`bar`、`scatter`、`heatmap`、`violin`，以及显式 `mixed` 系列、CFD 对数坐标、参考误差子图和可选误差棒。
 
 新增面向求解器与算法开发的定量分析能力：论文级系列身份配置、显式常值／阶数参考线、局部放大、跨行跨列组合图，以及数值热图共享色标。只处理定量数据；ParaView 粒子／三维渲染、截图拼版不在本轮范围。

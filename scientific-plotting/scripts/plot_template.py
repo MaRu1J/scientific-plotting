@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.container import BarContainer
+from matplotlib.patches import StepPatch
 from matplotlib import colors, font_manager
 from matplotlib.ticker import AutoMinorLocator, LogFormatterSciNotation, LogLocator, NullFormatter
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
@@ -63,7 +64,8 @@ JOURNALS = {
     "pof": {"widths_mm": (85.0, 170.0), "default_size": "aip-single", "min_type_pt": 8,
             "tiff_line_dpi": 600, "tiff_heatmap_dpi": 600},
 }
-KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed")
+ANALYSIS_KINDS = ("histogram", "ecdf", "box", "joint", "trajectory", "contribution")
+KINDS = ("point-line", "line", "bar", "scatter", "heatmap", "violin", "mixed", *ANALYSIS_KINDS)
 SERIES_KINDS = ("line", "point-line", "scatter")
 _FONT_CANDIDATES = {
     "Arial": (("Arial",), ("Liberation Sans",)),
@@ -451,7 +453,7 @@ def _style_axes(axes: mpl.axes.Axes, kind: str) -> None:
     axes.tick_params(which="minor", length=2.5, width=0.65)
     if kind == "heatmap":
         return
-    grid_axes = "y" if kind in ("bar", "violin") else "both"
+    grid_axes = "y" if kind in ("bar", "violin", "box", "contribution") else "both"
     for axis in (axes.yaxis, axes.xaxis) if grid_axes == "both" else (axes.yaxis,):
         if axis.get_scale() == "log":
             axis.set_major_locator(LogLocator(base=10, numticks=1000))
@@ -555,6 +557,10 @@ def _line_vertices(axes: mpl.axes.Axes) -> np.ndarray:
                 count = min(200, max(2, int(distance / 5)))
                 sampled.append(np.linspace(start, end, count))
     for patch in axes.patches:
+        if isinstance(patch, StepPatch):
+            vertices = patch.get_path().interpolated(10).transformed(patch.get_transform()).vertices
+            sampled.append(vertices)
+            continue
         box = patch.get_window_extent()
         sampled.append(np.array([box.p0, box.p1, box.get_points().mean(axis=0)]))
     for collection in axes.collections:
@@ -708,6 +714,10 @@ def _copy_identity(source, target) -> None:
         target.set_edgecolor(source.get_edgecolor())
         target.set_linewidth(source.get_linewidth())
         target.set_alpha(source.get_alpha())
+    elif isinstance(source, StepPatch):
+        target.set_color(source.get_edgecolor())
+        target.set_linewidth(source.get_linewidth())
+        target.set_linestyle(source.get_linestyle())
     elif isinstance(source, BarContainer):
         return
     else:
@@ -1860,6 +1870,10 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
                  if panel.get("encoding") is not None or panel.get("secondary_y") is not None or panel.get("palette", "classic") != "classic"]
     if decisions:
         report["visual_decisions"] = decisions
+    analyses = [{"panel": index, "analysis": panel["analysis"]}
+                for index, panel in enumerate(metadata.get("panels", [metadata]), 1) if panel.get("analysis") is not None]
+    if analyses:
+        report["quantitative_analysis"] = analyses
     target = paths[0].with_suffix("")
     report_paths = [target.with_name(target.name + "_review.json"), target.with_name(target.name + "_review.md")]
     _json_write(report_paths[0], report)
@@ -1884,6 +1898,10 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
             if decision["secondary_y"] is not None:
                 dual = decision["secondary_y"]
                 lines.append(f"  - Independent axes: {dual['reason']}")
+    if analyses:
+        lines.extend(["", "## Quantitative analysis"])
+        for record in analyses:
+            lines.append(f"- Panel {record['panel']}: " + json.dumps(record["analysis"], ensure_ascii=False))
     lines.extend(["", "## Manual checks", *[f"- {item}" for item in manual], "",
                   "Grayscale screening uses encoded-sRGB luminance distance < 0.08 plus marker/dash backup; "
                   "it is heuristic, not certification."])
@@ -2070,7 +2088,7 @@ def _recipe_inputs(options: dict, renderer: str) -> tuple[dict, dict]:
               "options": {key: value for key, value in options.items() if key not in excluded}}
     panel_keys = {"id", "kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
                   "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
-                  "reference_guides", "inset", "heatmap_scale", "quantity", "unit", "palette", "focus", "encoding", "secondary_y"}
+                  "reference_guides", "inset", "heatmap_scale", "quantity", "unit", "palette", "focus", "encoding", "secondary_y", "analysis"}
 
     def panel_recipe(data, settings, identifier):
         settings = dict(settings)
@@ -2081,6 +2099,8 @@ def _recipe_inputs(options: dict, renderer: str) -> tuple[dict, dict]:
             if settings["kind"] == "violin":
                 mapping_keys = ("x", "y")
             columns = [settings[key] for key in mapping_keys if settings.get(key) is not None]
+            analysis = settings.get("analysis") or {}
+            columns.extend(analysis[key] for key in ("weight", "order") if analysis.get(key) is not None)
             error_bars = settings.get("error_bars")
             if error_bars is not None:
                 error_bars = dict(error_bars)
@@ -2384,6 +2404,217 @@ def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size
             target.set_sizes(source.get_sizes()[:1])
 
 
+def _analysis_edges(values: np.ndarray, bins, name: str) -> np.ndarray:
+    if isinstance(bins, (int, np.integer)) and not isinstance(bins, (bool, np.bool_)):
+        if not 1 <= bins <= 1000:
+            raise ValueError(f"{name} requires 1 to 1000 bins.")
+        return np.histogram_bin_edges(values, bins=int(bins))
+    try:
+        edges = np.asarray(bins, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} requires an integer or explicit increasing edges.") from exc
+    if (edges.ndim != 1 or not 2 <= len(edges) <= 1001 or not np.isfinite(edges).all()
+            or np.any(np.diff(edges) <= 0)):
+        raise ValueError(f"{name} requires finite, strictly increasing edges (1 to 1000 bins).")
+    if values.min() < edges[0] or values.max() > edges[-1]:
+        raise ValueError(f"{name} edges exclude observations; no rows were removed.")
+    return edges
+
+
+def _analysis_spec(frame, kind, x, y, group, analysis, group_kind):
+    allowed = {
+        "histogram": {"bins", "statistic", "weight", "weight_definition"},
+        "ecdf": {"weight", "weight_definition"},
+        "box": {"whis"},
+        "joint": {"bins", "statistic", "weight", "weight_definition", "vmax"},
+        "trajectory": {"order", "arrows"},
+        "contribution": {"definition"},
+    }
+    if analysis is None:
+        analysis = {}
+    if not isinstance(analysis, dict) or analysis.keys() - allowed[kind]:
+        raise ValueError(f"analysis for {kind} accepts only {sorted(allowed[kind])}.")
+    _required(frame, x)
+    if kind not in ("joint", "trajectory", "contribution") and y is not None:
+        raise ValueError(f"{kind} uses x for samples and group for categories; omit y.")
+    if kind in ("joint", "trajectory", "contribution"):
+        _required(frame, y)
+        _numeric(frame, y)
+    if kind != "contribution":
+        _numeric(frame, x)
+    if group is not None:
+        _required(frame, group)
+    ordered = _ordered_groups(frame, group, group_kind)
+    groups = _groups(frame, group, ordered)
+    if group is not None and frame[group].map(str).nunique() != frame[group].nunique():
+        raise ValueError("Group labels must remain distinct when converted to strings.")
+    if kind == "joint" and group is not None:
+        raise ValueError("joint requires one population per panel; use facets instead of overlaying densities.")
+    if len(groups) > len(CATEGORICAL_COLORS):
+        raise ValueError("Too many analysis groups; divide them into panels.")
+    spec = dict(analysis)
+    spec["groups"] = groups
+    spec["ordered"] = ordered
+    metadata = {"kind": kind, "sample_sizes": {label: len(subset) for label, subset in groups},
+                "processing": "No smoothing, fitting, row exclusion or resampling."}
+    weight = spec.get("weight")
+    if weight is not None:
+        _required(frame, weight)
+        weights = _numeric(frame, weight)
+        if np.any(weights < 0):
+            raise ValueError("Weights must be nonnegative.")
+        definition = spec.get("weight_definition")
+        if not isinstance(definition, str) or not definition.strip():
+            raise ValueError("Weighted distributions require weight_definition (e.g. cell volume).")
+        for _, subset in groups:
+            total = _numeric(subset, weight).sum()
+            if not np.isfinite(total) or total <= 0:
+                raise ValueError("Each population requires positive finite total weight.")
+        metadata.update(weight=weight, weight_definition=definition,
+                        weight_sums={label: float(_numeric(subset, weight).sum()) for label, subset in groups})
+    elif "weight_definition" in spec:
+        raise ValueError("weight_definition requires a weight column.")
+    if kind in ("histogram", "joint"):
+        if "bins" not in spec or "statistic" not in spec:
+            raise ValueError(f"{kind} requires explicit bins and statistic (count, probability or density).")
+        if spec["statistic"] not in ("count", "probability", "density"):
+            raise ValueError("statistic must be count, probability or density.")
+        if kind == "joint":
+            if not isinstance(spec["bins"], (list, tuple)) or len(spec["bins"]) != 2:
+                raise ValueError("joint bins must contain [x_bins, y_bins].")
+            spec["edges"] = [_analysis_edges(_numeric(frame, column), bins, column)
+                             for column, bins in zip((x, y), spec["bins"])]
+            if np.prod([len(edges) - 1 for edges in spec["edges"]]) > 250000:
+                raise ValueError("joint supports at most 250000 cells; choose coarser bins.")
+            metadata["bin_edges"] = [edges.tolist() for edges in spec["edges"]]
+            if "vmax" in spec:
+                maximum = _finite_number(spec["vmax"], "joint vmax")
+                if isinstance(spec["vmax"], bool) or maximum <= 0:
+                    raise ValueError("joint vmax must be positive and finite.")
+                spec["vmax"] = maximum
+        else:
+            spec["edges"] = _analysis_edges(_numeric(frame, x), spec["bins"], "bins")
+            metadata["bin_edges"] = spec["edges"].tolist()
+        metadata.update(statistic=spec["statistic"], normalization="Per population; all observations included.")
+    if kind == "ecdf":
+        metadata.update(statistic="empirical cumulative probability",
+                        processing="Stable sample sort for ECDF only; ties combined; no smoothing or row exclusion.")
+    if kind == "box":
+        whis = spec.get("whis", 1.5)
+        if isinstance(whis, bool) or not np.isscalar(whis) or not np.isfinite(float(whis)) or float(whis) <= 0:
+            raise ValueError("box whis must be a positive finite IQR multiplier.")
+        spec["whis"] = float(whis)
+        metadata.update(whis=spec["whis"], definition="Median, Q1/Q3; whiskers within whis * IQR; all fliers shown.")
+    if kind == "trajectory":
+        order = spec.get("order")
+        arrows = spec.get("arrows", [])
+        if not isinstance(arrows, (list, tuple)) or any(isinstance(index, bool) or not isinstance(index, (int, np.integer))
+                                                      or index < 0 for index in arrows) or len(set(arrows)) != len(arrows):
+            raise ValueError("trajectory arrows must be unique nonnegative segment indices.")
+        for _, subset in groups:
+            if len(subset) < 2:
+                raise ValueError("Each trajectory requires at least two observations.")
+            if order is not None:
+                _required(subset, order)
+                if np.any(np.diff(_numeric(subset, order)) <= 0):
+                    raise ValueError("trajectory order must strictly increase within each group; rows are never sorted.")
+            if any(index >= len(subset) - 1 for index in arrows):
+                raise ValueError("trajectory arrow index exceeds a group's available segments.")
+            for index in arrows:
+                if subset.iloc[index][x] == subset.iloc[index + 1][x] and subset.iloc[index][y] == subset.iloc[index + 1][y]:
+                    raise ValueError("Direction arrow requires a nonzero trajectory segment.")
+        metadata.update(order=order or "original within-group row order", arrows=[int(index) for index in arrows],
+                        definition="Open parametric path; no inferred loop closure, cycle or hysteresis area.")
+    if kind == "contribution":
+        definition = spec.get("definition")
+        if not isinstance(definition, str) or not definition.strip():
+            raise ValueError("contribution requires definition describing the terms and sign convention.")
+        for _, subset in groups:
+            if subset[x].astype(str).duplicated().any():
+                raise ValueError("Repeated contribution term; aggregate explicitly before plotting.")
+        metadata.update(definition=definition, baseline=0, normalization="None; supplied signed values, not percentages.")
+    spec["metadata"] = metadata
+    return spec
+
+
+def _draw_analysis(axes, frame, kind, x, y, spec, palette, focus, families, draw_colorbar):
+    groups = spec["groups"]
+    palette_colors = _palette(len(groups), spec["ordered"], palette,
+                              next((index for index, (label, _) in enumerate(groups) if label == focus), None))
+    labels = {"count": "Weighted count" if spec.get("weight") else "Count",
+              "probability": "Probability (-)", "density": "Probability density"}
+    if kind == "joint":
+        weights = _numeric(frame, spec["weight"]) if spec.get("weight") else None
+        counts, xedges, yedges = np.histogram2d(_numeric(frame, x), _numeric(frame, y), bins=spec["edges"], weights=weights)
+        values = counts.copy()
+        if spec["statistic"] != "count":
+            values /= counts.sum()
+        if spec["statistic"] == "density":
+            values /= np.diff(xedges)[:, None] * np.diff(yedges)[None, :]
+        if not np.isfinite(values).all():
+            raise ValueError("Joint bin values are non-finite; check weights and bin widths.")
+        if spec.get("vmax") is not None and values.max() > spec["vmax"]:
+            raise ValueError("joint vmax excludes bin values; expand the scale instead of clipping.")
+        image = axes.pcolormesh(xedges, yedges, values.T, cmap="cividis", shading="flat", vmin=0, vmax=spec.get("vmax"))
+        spec["metadata"]["color_limits"] = [0, float(image.norm.vmax)]
+        axes.grid(False, which="both")
+        if draw_colorbar:
+            axes.figure.colorbar(image, ax=axes, label=_prepare_label(labels[spec["statistic"]], families), fraction=0.05, pad=0.03)
+        return x, y
+    if kind == "box":
+        parts = axes.boxplot([_numeric(subset, x) for _, subset in groups], patch_artist=True,
+                             whis=spec["whis"], showfliers=True,
+                             medianprops={"color": "#292929", "linewidth": 1.2},
+                             flierprops={"marker": "o", "markersize": 3, "markerfacecolor": "none", "markeredgecolor": "#333333"})
+        for patch, color in zip(parts["boxes"], palette_colors):
+            patch.set_facecolor(color)
+            patch.set_edgecolor("#333333")
+        axes.set_xticks(np.arange(1, len(groups) + 1), [_prepare_label(label or "Data", families) for label, _ in groups])
+        return "", x
+    categories = list(pd.unique(frame[x].astype(str))) if kind == "contribution" else None
+    for index, ((label, subset), color) in enumerate(zip(groups, palette_colors)):
+        samples = _numeric(subset, x) if kind != "contribution" else None
+        weights = _numeric(subset, spec["weight"]) if spec.get("weight") else None
+        if kind == "histogram":
+            values, edges = np.histogram(samples, bins=spec["edges"], weights=weights)
+            values = values.astype(float)
+            if spec["statistic"] != "count":
+                values /= values.sum()
+            if spec["statistic"] == "density":
+                values /= np.diff(edges)
+            if not np.isfinite(values).all():
+                raise ValueError("Histogram values are non-finite; check weights and bin widths.")
+            axes.stairs(values, edges, label=label, color=color, linewidth=1.2, linestyle=LINESTYLES[index])
+        elif kind == "ecdf":
+            order = np.argsort(samples, kind="stable")
+            sorted_samples = samples[order]
+            mass = np.ones(len(samples)) if weights is None else weights[order]
+            cumulative = np.cumsum(mass) / mass.sum()
+            ends = np.r_[sorted_samples[1:] != sorted_samples[:-1], True]
+            coordinates = sorted_samples[ends]
+            axes.step(np.r_[coordinates[0], coordinates], np.r_[0, cumulative[ends]], where="post",
+                      label=label, color=color, linewidth=1.2, linestyle=LINESTYLES[index])
+        elif kind == "trajectory":
+            ordinates = _numeric(subset, y)
+            axes.plot(samples, ordinates, label=label, color=color, linewidth=1.2, linestyle=LINESTYLES[index])
+            axes.plot(samples[0], ordinates[0], marker="o", markersize=4, color=color, linestyle="none")
+            for segment in spec.get("arrows", []):
+                axes.annotate("", xy=(samples[segment + 1], ordinates[segment + 1]), xytext=(samples[segment], ordinates[segment]),
+                              arrowprops={"arrowstyle": "->", "color": color, "lw": 1.2})
+        else:
+            positions = [categories.index(str(category)) for category in subset[x]]
+            width = 0.8 / len(groups)
+            centers = np.asarray(positions) + (index - (len(groups) - 1) / 2) * width
+            axes.bar(centers, _numeric(subset, y), width=width, label=label, color=color,
+                     edgecolor="#333333", linewidth=0.65, hatch=("", "//", "xx", "..", "\\\\", "++", "oo", "--")[index])
+    if kind == "contribution":
+        axes.axhline(0, color="#292929", linewidth=0.9)
+        axes.set_xticks(np.arange(len(categories)), [_prepare_label(category, families) for category in categories])
+    if kind == "ecdf":
+        axes.set_ylim(0, 1.02)
+    return x, labels[spec["statistic"]] if kind == "histogram" else "Cumulative probability (-)" if kind == "ecdf" else y
+
+
 @_delivery
 def render_plot(
     data: pd.DataFrame | dict | np.ndarray,
@@ -2415,6 +2646,7 @@ def render_plot(
     reference_guides: list[dict] | None = None,
     inset: dict | None = None,
     heatmap_scale: dict | None = None,
+    analysis: dict | None = None,
     error: dict | None = None,
     error_bars: dict | None = None,
     legend: str = "auto",
@@ -2432,6 +2664,15 @@ def render_plot(
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or group_kind not in ("auto", "ordered", "categorical"):
         raise ValueError("Unknown plot kind or group kind.")
+    if kind not in ANALYSIS_KINDS and analysis is not None:
+        raise ValueError("analysis applies to histogram, ecdf, box, joint, trajectory and contribution only.")
+    if kind in ANALYSIS_KINDS and any(option is not None for option in (series_styles, style_registry, encoding, secondary_y,
+                                                                       reference_guides, inset, heatmap_scale, error, error_bars)):
+        raise ValueError("Analysis plots do not support series styles, registry, encoding, dual axes, guides, insets, heatmap scales or error bars.")
+    if kind in ANALYSIS_KINDS and value is not None:
+        raise ValueError("Analysis plots use x/y/group mappings, not value.")
+    if kind == "joint" and (palette != "classic" or focus is not None):
+        raise ValueError("joint uses a quantitative cividis color scale, not categorical palettes.")
     _palette(0, False, palette)
     if (palette == "focus") != (isinstance(focus, str) and bool(focus.strip())) or (palette != "focus" and focus is not None):
         raise ValueError("palette='focus' requires an explicit nonempty focus label; other palettes refuse focus.")
@@ -2456,7 +2697,7 @@ def render_plot(
     if heatmap_scale is not None and kind != "heatmap":
         raise ValueError("heatmap_scale applies to heatmaps only.")
     chosen_formats = resolve_formats(formats)
-    dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, kind == "heatmap")
+    dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, kind in ("heatmap", "joint"))
     if line_width is not None and (kind not in ("point-line", "line", "mixed") or isinstance(line_width, bool)
                                    or not np.isfinite(line_width)
                                    or not LINE_WIDTH_MIN_PT <= float(line_width) <= LINE_WIDTH_MAX_PT):
@@ -2468,6 +2709,9 @@ def render_plot(
     face = resolve_font(font)
     families = _font_families(face)
     frame = _frame(data, kind)
+    analysis_spec = _analysis_spec(frame, kind, x, y, group, analysis, group_kind) if kind in ANALYSIS_KINDS else None
+    if analysis_spec is not None and palette == "focus" and not any(label == focus for label, _ in analysis_spec["groups"]):
+        raise ValueError("focus must name a plotted analysis group.")
     if kind in (*SERIES_KINDS, "mixed"):
         _required(frame, x, y)
         for column, scale in ((x, xscale), (y, yscale)):
@@ -2542,7 +2786,8 @@ def render_plot(
             "size": size, "journal": journal,
             "width_mm": width_mm, "height_mm": resolved_height,
             "formats": list(chosen_formats), "dpi_by_format": dpi_by_format,
-            "heatmap": kind == "heatmap",
+            "heatmap": kind in ("heatmap", "joint"),
+            "analysis": analysis_spec["metadata"] if analysis_spec is not None else None,
             "error": error_metadata if error is not None else None,
             "reference_guides": guides,
             "inset": inset_spec,
@@ -2594,7 +2839,10 @@ def render_plot(
                 record["axis"] = "right" if target_axes is right_axes else "left"
             error_bar_records.append(record)
 
-        if kind in ("point-line", "line", "scatter", "bar", "mixed"):
+        default_xlabel, default_ylabel = x or "", y or value or ""
+        if analysis_spec is not None:
+            default_xlabel, default_ylabel = _draw_analysis(axes, frame, kind, x, y, analysis_spec, palette, focus, families, draw_colorbar)
+        elif kind in ("point-line", "line", "scatter", "bar", "mixed"):
             _required(frame, x, y)
             if kind in (*SERIES_KINDS, "mixed"):
                 ordered = False if encoding is not None else _ordered_groups(frame, group, group_kind)
@@ -2706,8 +2954,8 @@ def render_plot(
                 parts[key].set_color("#333333")
             axes.set_xticks(np.arange(1, len(categories) + 1), [str(category) for category in categories])
         label_axes = error_axes if error_axes is not None else axes
-        label_axes.set_xlabel(_prepare_label(xlabel if xlabel is not None else (x or ""), families))
-        axes.set_ylabel(_prepare_label(ylabel if ylabel is not None else (y or value or ""), families))
+        label_axes.set_xlabel(_prepare_label(xlabel if xlabel is not None else default_xlabel, families))
+        axes.set_ylabel(_prepare_label(ylabel if ylabel is not None else default_ylabel, families))
         if title:
             axes.set_title(title)
         _draw_guides(axes, guides)
@@ -2763,7 +3011,7 @@ def render_plot(
             figure.scientific_review = review_figure(figure, journal=journal)
             exported = _export_figure(figure, output, chosen_formats, dpi_by_format, metadata,
                                       error is not None or error_bar_state is not None or bool(guides) or inset_spec is not None
-                                      or palette != "classic" or encoding is not None or secondary_spec is not None
+                                      or palette != "classic" or encoding is not None or secondary_spec is not None or analysis_spec is not None
                                       or any("fillstyle" in getattr(artist, "_scientific_style", {}) for artist in artists.values()))
         return figure, axes, exported
 
@@ -2911,6 +3159,7 @@ def render_multipanel(
     if legend not in ("shared", "each", "none"):
         raise ValueError("Multipanel legend must be shared, each or none.")
     has_secondary = any(isinstance(panel, dict) and panel.get("secondary_y") is not None for panel in panels)
+    has_joint = any(isinstance(panel, dict) and panel.get("kind") == "joint" for panel in panels)
     if has_secondary and sharey:
         raise ValueError("Dual-axis panels cannot use sharey; choose explicit matching primary/secondary limits.")
     if journal not in JOURNALS:
@@ -2938,14 +3187,14 @@ def render_multipanel(
         if panel.get("title"):
             raise ValueError("Multi-panel figures do not draw an in-figure title; put it in the caption.")
     chosen_formats = resolve_formats(formats)
-    heatmap = any(panel.get("kind") == "heatmap" for panel in panels)
+    heatmap = any(panel.get("kind") in ("heatmap", "joint") for panel in panels)
     dpi_by_format = resolve_dpi(dpi, chosen_formats, journal, heatmap)
     face = resolve_font(font)
     text_sizes = TEXT_SIZES_PT[size]
     letters = [f"({chr(ord('a') + index)})" for index in range(count)]
     draw_keys = ("kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
                  "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
-                 "reference_guides", "inset", "heatmap_scale", "palette", "focus", "encoding", "secondary_y")
+                 "reference_guides", "inset", "heatmap_scale", "palette", "focus", "encoding", "secondary_y", "analysis")
     with mpl.rc_context(_rc_for_font(face, text_sizes, embed=False)):
         figure = plt.figure(figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120)
         figure.scientific_error_axes = None
@@ -2961,12 +3210,12 @@ def render_multipanel(
             "layout": layout, "shared_colorbar": shared_colorbar,
         }
         if shared_scale is None:
-            grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.8 if has_secondary else 0.38)
+            grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.8 if has_secondary or has_joint else 0.38)
         else:
             outer = figure.add_gridspec(1, 2, width_ratios=[1, 0.035], wspace=0.12)
             grid = outer[0].subgridspec(nrows, ncols, hspace=0.55, wspace=0.38)
             colorbar_axes = figure.add_subplot(outer[1])
-        figure.subplots_adjust(left=0.16, right=0.86 if has_secondary else 0.88 if shared_scale is not None else 0.97, bottom=0.16, top=0.90)
+        figure.subplots_adjust(left=0.16, right=0.86 if has_secondary or has_joint else 0.88 if shared_scale is not None else 0.97, bottom=0.16, top=0.90)
         created = []
         share_x_anchor = None
         share_y_anchor = None
@@ -2991,7 +3240,7 @@ def render_multipanel(
             if share_y_anchor is None:
                 share_y_anchor = axes
             kwargs = {key: panel[key] for key in draw_keys if key in panel}
-            kwargs.setdefault("palette", palette if panel["kind"] != "heatmap" else "classic")
+            kwargs.setdefault("palette", palette if panel["kind"] not in ("heatmap", "joint") else "classic")
             kwargs.setdefault("focus", focus if kwargs["palette"] == "focus" else None)
             kwargs.setdefault("encoding", encoding if panel["kind"] in (*SERIES_KINDS, "mixed") else None)
             if shared_scale is not None and panel["kind"] == "heatmap":
@@ -3144,6 +3393,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--secondary-y-config", type=Path, help="Explicit dual-axis roles, quantities, units, limits and scientific reason")
     parser.add_argument("--reference-config", type=Path, help="JSON list of explicit constant or power reference guides")
     parser.add_argument("--inset-config", type=Path, help="JSON xlim, ylim and bounds for an explicit zoom inset")
+    parser.add_argument("--analysis-config", type=Path, help="JSON explicit distribution bins/statistic, weights, trajectory or contribution settings")
     parser.add_argument("--legend", choices=("auto", "outside"), default="auto")
     parser.add_argument("--error-reference", help="Reference series label; adds a shared-x, linear-y error panel")
     parser.add_argument("--error-definition", choices=("signed", "absolute", "relative"))
@@ -3188,6 +3438,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     secondary_y = json.loads(options.secondary_y_config.read_text(encoding="utf-8")) if options.secondary_y_config else None
     reference_guides = json.loads(options.reference_config.read_text(encoding="utf-8")) if options.reference_config else None
     inset = json.loads(options.inset_config.read_text(encoding="utf-8")) if options.inset_config else None
+    analysis = json.loads(options.analysis_config.read_text(encoding="utf-8")) if options.analysis_config else None
     source = options.input.resolve()
     if source.suffix.lower() == ".csv":
         frame = pd.read_csv(source, index_col=options.index_col)
@@ -3204,7 +3455,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         line_width=options.line_width, marker_size=options.marker_size,
         xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
         style_registry=style_registry, palette=options.palette, focus=options.focus, encoding=encoding, secondary_y=secondary_y,
-        reference_guides=reference_guides, inset=inset,
+        reference_guides=reference_guides, inset=inset, analysis=analysis,
         error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
         journal=options.journal, height_mm=options.height_mm,
         report=options.report, bundle=options.bundle, include_data=options.include_data,
@@ -3221,7 +3472,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
                                       ("--encoding-config", encoding, "encoding"),
                                       ("--secondary-y-config", secondary_y, "secondary_y"),
                                       ("--reference-config", reference_guides, "references"),
-                                      ("--inset-config", inset, "inset")):
+                                      ("--inset-config", inset, "inset"),
+                                      ("--analysis-config", analysis, "analysis")):
             if getattr(options, flag[2:].replace("-", "_")) is not None:
                 config_path = target.with_name(target.stem + f"_{suffix}.json")
                 config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
