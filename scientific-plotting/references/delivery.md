@@ -16,6 +16,8 @@ Review and bundle requests require an explicit `output`. Bundle targets must be 
 
 The returned paths contain **images only**. Read `figure.scientific_report_paths`, `figure.scientific_report` and, when requested, `figure.scientific_bundle_path` for delivery information. `review_figure` still returns a list of findings; `figure.scientific_review` includes the extended findings when reporting is enabled.
 
+Opt-in [semantic design](semantic-design.md) settings (`palette`, `focus`, `encoding` and per-panel `secondary_y`) are preserved in bundle recipes, including panel overrides. Reports for active new modes include `visual_decisions`: declared roles, observed combinations, palettes, units and independent-axis reasons/ranges, not raw observation arrays. New review findings screen undeclared metric units, small hollow markers, missing combinations, secondary-label overlap, later limit edits and duplicate grids; grayscale screening compares series across both y axes. These remain heuristics, not dimensional verification or accessibility certification. The original numeric metadata sidecar can still contain values/error arrays; it is excluded from bundle artifacts and should not be treated as automatically safe to share. Single-plot CLI reproduction also pins the two new JSON files supplied by `--encoding-config` and `--secondary-y-config`.
+
 Single-plot CLI examples (use your own existing CSV; no example performance is implied):
 
 ```bash

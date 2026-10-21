@@ -87,6 +87,12 @@ _CJK_FACES = frozenset(name for preferred, fallbacks in (
 # Ordered stops run amber -> yellow-green -> green -> teal -> deep blue-teal.
 CATEGORICAL_COLORS = ("#2F6DB5", "#D35400", "#1B8A4C", "#AA3377", "#6A7020", "#C4453A", "#5C4E9A", "#3A3F46")
 ORDERED_COLORS = ("#C46B04", "#578006", "#24782B", "#066955", "#0A5270")
+PALETTES = {
+    "classic": CATEGORICAL_COLORS,
+    "jewel": ("#315DB0", "#00836F", "#C45618", "#A33278", "#8C7218", "#6550AA", "#AD4245", "#424C59"),
+    "muted": ("#52759B", "#A65F3B", "#4F7C66", "#8E6185", "#82752F", "#AC5552", "#706E9B", "#515B65"),
+    "focus": ("#315DB0", "#717984"),
+}
 MARKERS = ("o", "s", "^", "D", "v", "p")
 SCATTER_DENSE_PT = 5.0
 SCATTER_SPARSE_PT = 6.2
@@ -384,7 +390,17 @@ def _oklab_to_hex(oklab: np.ndarray) -> str:
     return colors.to_hex(tuple(_encode_srgb(channel) for channel in linear))
 
 
-def _palette(count: int, ordered: bool) -> list[str]:
+def _palette(count: int, ordered: bool, palette: str = "classic", focus_index: int | None = None) -> list[str]:
+    if not isinstance(palette, str) or palette not in PALETTES:
+        raise ValueError(f"Unknown palette; choose from {', '.join(PALETTES)}.")
+    if ordered and palette != "classic":
+        raise ValueError("Named categorical palettes require group_kind='categorical'; ordered groups retain their ramp.")
+    if palette == "focus":
+        return [PALETTES[palette][0 if index == focus_index else 1] for index in range(count)]
+    if palette != "classic":
+        if count > len(PALETTES[palette]):
+            raise ValueError("Palette capacity exceeded; divide categories into panels instead of repeating colors.")
+        return list(PALETTES[palette][:count])
     if ordered:
         if count <= 1:
             return [ORDERED_COLORS[-1]]
@@ -470,6 +486,10 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
         collection.set_linewidth(0.45 if diameter < 5.5 else 0.6)
         collection.set_edgecolor("#2A2A2A")
         collection.set_alpha(0.85 if spacing < 12 else 1)
+        if style.get("fillstyle") == "none":
+            collection.set_facecolor("none")
+            collection.set_edgecolor(style["color"])
+            collection.set_linewidth(0.85)
     for line in axes.lines:
         if getattr(line, "_scientific_errorbar", False) or getattr(line, "_scientific_guide", False):
             continue
@@ -489,9 +509,11 @@ def _adapt_strokes(axes: mpl.axes.Axes, kind: str,
             diameter = marker_override if marker_override is not None else diameter
             edge_mode, edge_width = _marker_edge(diameter)
             line.set_markersize(diameter)
-            line.set_markerfacecolor(line.get_color())
-            line.set_markeredgecolor(line.get_color() if edge_mode == "face" else "white")
-            line.set_markeredgewidth(edge_width)
+            hollow = style.get("fillstyle") == "none"
+            line.set_fillstyle("none" if hollow else "full")
+            line.set_markerfacecolor("none" if hollow else line.get_color())
+            line.set_markeredgecolor(line.get_color() if hollow or edge_mode == "face" else "white")
+            line.set_markeredgewidth(0.85 if hollow else edge_width)
 
 
 def _adapt_log_ticks(axes) -> None:
@@ -560,8 +582,10 @@ def _layout_boxes(figure: mpl.figure.Figure):
         boxes.append(panel.get_window_extent(renderer))
         texts = [panel.title, panel.xaxis.label, panel.yaxis.label,
                  panel.xaxis.get_offset_text(), panel.yaxis.get_offset_text()]
+        texts.extend(text for text in panel.texts if getattr(text, "_scientific_panel_letter", False))
         for axis in (panel.xaxis, panel.yaxis):
-            texts.extend(tick.label1 for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks()))
+            texts.extend(label for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())
+                         for label in (tick.label1, tick.label2))
         for text in texts:
             if text.get_visible() and text.get_text().strip():
                 boxes.append(text.get_window_extent(renderer))
@@ -580,7 +604,7 @@ def _outside_legend_is_clear(figure: mpl.figure.Figure, legend) -> bool:
 
 def _place_outside_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, legend_size: float) -> bool:
     """Put the legend in a top band, then a bottom band. Never use a side column."""
-    handles, labels = axes.get_legend_handles_labels()
+    handles, labels = _legend_entries(axes)
     saved = (figure.subplotpars.left, figure.subplotpars.bottom, figure.subplotpars.right, figure.subplotpars.top)
     pad = 6 * figure.dpi / 72
 
@@ -590,7 +614,7 @@ def _place_outside_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, legend
     for side, loc, anchor in (("top", "upper center", (0.5, 0.99)), ("bottom", "lower center", (0.5, 0.01))):
         for columns in range(len(handles), 0, -1):
             restore()
-            legend = axes.legend(handles, labels, loc=loc, bbox_to_anchor=anchor, bbox_transform=figure.transFigure,
+            legend = _series_axes(axes)[-1].legend(handles, labels, loc=loc, bbox_to_anchor=anchor, bbox_transform=figure.transFigure,
                                  ncol=columns, frameon=True, framealpha=1, facecolor="white", edgecolor="#777777",
                                  fontsize=legend_size)
             figure.canvas.draw()
@@ -643,11 +667,11 @@ def _place_outside_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, legend
 
 def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
                   placement: str = "auto") -> None:
-    handles, labels = axes.get_legend_handles_labels()
+    handles, labels = _legend_entries(axes)
     if not handles:
         return
     renderer = figure.canvas.get_renderer()
-    points = _line_vertices(axes)
+    points = np.vstack([_line_vertices(panel) for panel in _series_axes(axes)])
     axes_box = axes.get_window_extent(renderer)
     radii = [line.get_markersize() / 2 if line.get_marker() not in (None, "None", "", " ")
              else line.get_linewidth() / 2 for line in axes.lines]
@@ -659,7 +683,7 @@ def _place_legend(figure: mpl.figure.Figure, axes: mpl.axes.Axes, size: str,
                  "lower center", "center right", "center left")
     for columns in range(min(3, len(handles)), 0, -1) if placement == "auto" else ():
         for location in locations:
-            legend = axes.legend(loc=location, ncol=columns, frameon=True, framealpha=1,
+            legend = _series_axes(axes)[-1].legend(handles, labels, loc=location, ncol=columns, frameon=True, framealpha=1,
                                  facecolor="white", edgecolor="#777777", fontsize=legend_size)
             figure.canvas.draw()
             box = legend.get_window_extent(figure.canvas.get_renderer())
@@ -691,6 +715,7 @@ def _copy_identity(source, target) -> None:
         target.set_linestyle(getattr(source, "_scientific_linestyle", source.get_linestyle()))
         target.set_linewidth(source.get_linewidth())
         target.set_marker(source.get_marker())
+        target.set_fillstyle(source.get_fillstyle())
         target.set_markersize(source.get_markersize())
         target.set_markerfacecolor(source.get_markerfacecolor())
         target.set_markeredgecolor(source.get_markeredgecolor())
@@ -698,10 +723,10 @@ def _copy_identity(source, target) -> None:
 
 
 def _sync_legend(axes) -> None:
-    legend = axes.get_legend()
+    legend = _series_axes(axes)[-1].get_legend()
     if legend is None:
         return
-    handles, _ = axes.get_legend_handles_labels()
+    handles, _ = _legend_entries(axes)
     for source, target in zip(handles, legend.legend_handles):
         _copy_identity(source, target)
         if isinstance(source, PathCollection):
@@ -722,8 +747,8 @@ def _check_text_layout(figure: mpl.figure.Figure) -> None:
                              (panel_axes.yaxis, panel_axes.get_ylim())):
             low, high = sorted(limits)
             text_items.append(axis.get_offset_text())
-            text_items.extend(tick.label1 for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())
-                              if low <= tick.get_loc() <= high)
+            text_items.extend(label for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())
+                              if low <= tick.get_loc() <= high for label in (tick.label1, tick.label2))
         text_items.extend(text for text in panel_axes.texts if getattr(text, "_scientific_panel_letter", False))
         for text_item in text_items:
             if not text_item.get_visible() or not text_item.get_text():
@@ -737,19 +762,180 @@ def _check_text_layout(figure: mpl.figure.Figure) -> None:
             raise ValueError("Legend is clipped by this size preset.")
 
 
-def _registry_styles(style_registry: dict | None) -> dict:
+def _encoding_styles(encoding, values: list, palette: str, focus: str | None) -> tuple[dict, dict | None]:
+    if encoding is None:
+        return {}, None
+    allowed = {"categories", "metrics", "series", "category_label", "metric_label", "legend", "reason"}
+    if not isinstance(encoding, dict) or encoding.keys() - allowed:
+        raise ValueError("encoding requires explicit categories, metrics and series roles; unknown keys are refused.")
+    for key, style_keys in (("categories", {"color", "marker"}), ("metrics", {"linestyle", "fillstyle", "quantity", "unit"})):
+        entries = encoding.get(key)
+        if not isinstance(entries, dict) or not entries:
+            raise ValueError(f"encoding needs nonempty {key}.")
+        for label, style in entries.items():
+            if not isinstance(label, str) or not label.strip() or not isinstance(style, dict) or style.keys() - style_keys:
+                raise ValueError(f"Invalid {key} role or style keys.")
+            if key == "metrics" and ("quantity" in style or "unit" in style):
+                if any(not isinstance(style.get(field), str) or not style[field].strip() for field in ("quantity", "unit")):
+                    raise ValueError("A typed metric needs both nonempty quantity and unit; units are never inferred.")
+    roles = encoding.get("series")
+    if not isinstance(roles, dict) or not roles:
+        raise ValueError("encoding.series must explicitly map series labels to category and metric.")
+    for label, role in roles.items():
+        if (not isinstance(label, str) or not isinstance(role, dict) or role.keys() != {"category", "metric"}
+                or not isinstance(role["category"], str) or not isinstance(role["metric"], str)
+                or role["category"] not in encoding["categories"] or role["metric"] not in encoding["metrics"]):
+            raise ValueError("Each encoding series needs known category and metric roles.")
+    if {label for label, _ in values} - roles.keys():
+        raise ValueError("encoding.series must cover every plotted series; roles are never inferred from labels.")
+    legend_mode = encoding.get("legend", "factorized")
+    if legend_mode not in ("factorized", "combined"):
+        raise ValueError("encoding.legend must be factorized or combined.")
+    for key, default in (("category_label", "Category"), ("metric_label", "Metric"), ("reason", "Explicit category/metric roles")):
+        if not isinstance(encoding.get(key, default), str) or not encoding.get(key, default).strip():
+            raise ValueError(f"encoding.{key} must be nonempty text.")
+    categories = list(encoding["categories"])
+    if palette == "focus" and focus not in categories:
+        raise ValueError("With encoding, focus must name a declared category, not a combined series.")
+    category_colors = _palette(len(categories), False, palette, categories.index(focus) if focus in categories else None)
+    category_styles = {category: {"color": category_colors[index], "marker": MARKERS[index % len(MARKERS)], **style}
+                       for index, (category, style) in enumerate(encoding["categories"].items())}
+    metric_styles = {metric: {"linestyle": "-", "fillstyle": "full", **style}
+                     for metric, style in encoding["metrics"].items()}
+    styles = {label: {**category_styles[roles[label]["category"]],
+                      **{key: value for key, value in metric_styles[roles[label]["metric"]].items() if key not in ("quantity", "unit")}}
+              for label, _ in values}
+    observed = [dict(series=label, **roles[label]) for label, _ in values]
+    metadata = {"category_label": encoding.get("category_label", "Category"),
+                "metric_label": encoding.get("metric_label", "Metric"), "legend": legend_mode,
+                "reason": encoding.get("reason", "Explicit category/metric roles"),
+                "categories": category_styles, "metrics": metric_styles, "observed": observed}
+    return styles, metadata
+
+
+def _series_axes(axes) -> list:
+    secondary = getattr(axes, "scientific_secondary_axes", None)
+    return [axes] if secondary is None else [axes, secondary]
+
+
+def _resolve_secondary_y(spec, values: list, *, kind: str, ylabel, yscale: str, error, inset, guides, encoding) -> dict | None:
+    if spec is None:
+        return None
+    required = {"series", "label", "quantity", "unit", "limits", "primary", "reason"}
+    if not isinstance(spec, dict) or not required.issubset(spec) or spec.keys() - (required | {"scale"}):
+        raise ValueError("secondary_y requires series, label, quantity, unit, limits, primary and reason.")
+    if kind not in SERIES_KINDS:
+        raise ValueError("secondary_y supports native line, point-line and scatter only; mixed is not supported yet.")
+    if error is not None or inset is not None or guides:
+        raise ValueError("secondary_y cannot yet combine with reference-error panels, inset or reference_guides; use facets.")
+    for key in ("label", "quantity", "unit", "reason"):
+        if not isinstance(spec[key], str) or not spec[key].strip():
+            raise ValueError(f"secondary_y.{key} needs nonempty explicit text.")
+    primary = spec["primary"]
+    if not isinstance(primary, dict) or primary.keys() != {"quantity", "unit", "limits"}:
+        raise ValueError("secondary_y.primary requires quantity, unit and limits.")
+    if not isinstance(ylabel, str) or not ylabel.strip():
+        raise ValueError("secondary_y requires an explicit primary ylabel including units.")
+    if any(not isinstance(primary[key], str) or not primary[key].strip() for key in ("quantity", "unit")):
+        raise ValueError("Both axes require explicit quantity and unit; use '-' for dimensionless values.")
+    if primary["quantity"].strip().casefold() == spec["quantity"].strip().casefold():
+        raise ValueError("The same quantity should share an axis or use a reversible unit-conversion axis, not independent dual axes.")
+    scale = spec.get("scale", "linear")
+    if scale not in ("linear", "log"):
+        raise ValueError("secondary_y.scale must be linear or log.")
+    selected = spec["series"]
+    labels = {label for label, _ in values}
+    if (not isinstance(selected, list) or not selected or any(not isinstance(label, str) for label in selected)
+            or len(set(selected)) != len(selected) or not set(selected) < labels):
+        raise ValueError("secondary_y.series must be a nonempty unique proper subset of plotted series labels.")
+    if encoding is not None:
+        metrics = {}
+        for record in encoding["observed"]:
+            axis_name = "right" if record["series"] in selected else "left"
+            metric = record["metric"]
+            if metric in metrics and metrics[metric] != axis_name:
+                raise ValueError("A semantic metric cannot be split across the left and right axes.")
+            metrics[metric] = axis_name
+            declared = encoding["metrics"][metric]
+            axis_spec = spec if axis_name == "right" else primary
+            if "quantity" in declared and any(declared[field] != axis_spec[field] for field in ("quantity", "unit")):
+                raise ValueError("Metric quantity/unit disagrees with its explicit dual-axis assignment.")
+    return {**spec, "series": list(selected), "scale": scale,
+            "limits": _interval(spec["limits"], "secondary_y.limits", positive=scale == "log"),
+            "primary": {**primary, "limits": _interval(primary["limits"], "primary.limits", positive=yscale == "log")}}
+
+
+def _legend_entries(axes) -> tuple[list, list]:
+    handles, labels = [], []
+    for panel in _series_axes(axes):
+        panel_handles, panel_labels = panel.get_legend_handles_labels()
+        handles.extend(panel_handles)
+        labels.extend(panel_labels)
+    spec = getattr(axes, "_scientific_encoding", None)
+    if spec is None or spec["legend"] == "combined":
+        return handles, labels
+    role_handles = [handle for handle in handles if hasattr(handle, "_scientific_roles")]
+    if not role_handles:
+        return handles, labels
+    if len({handle._scientific_identity[0] for handle in role_handles}) != 1:
+        raise ValueError("Factorized legend requires a consistent series kind; use encoding.legend='combined'.")
+    seen = {"category": {}, "metric": {}}
+    pairs = set()
+    for handle in role_handles:
+        role = handle._scientific_roles
+        pair = (role["category"], role["metric"])
+        if pair in pairs:
+            raise ValueError("Duplicate category/metric pair is ambiguous; use combined legend or explicit replicate roles.")
+        pairs.add(pair)
+        style = handle._scientific_style
+        identities = {"category": (colors.to_hex(style["color"]), style.get("marker")),
+                      "metric": (str(style.get("linestyle")), style.get("fillstyle"))}
+        for key in seen:
+            label = role[key]
+            if label in seen[key] and seen[key][label][0] != identities[key]:
+                raise ValueError("Styles cannot be factorized consistently; use encoding.legend='combined'.")
+            seen[key][label] = (identities[key], style)
+    proxies, proxy_labels = [], []
+    series_kind = role_handles[0]._scientific_identity[0]
+    for key, definitions in (("category", spec["categories"]), ("metric", spec["metrics"])):
+        if len({identity for identity, _style in seen[key].values()}) != len(seen[key]):
+            raise ValueError(f"Distinct {key} roles need distinct visible encodings; use facets or revise styles.")
+        for label in definitions:
+            if label not in seen[key]:
+                continue
+            identity, style = seen[key][label]
+            color = style["color"] if key == "category" else "#424C59"
+            marker = (style.get("marker", "o") if key == "category" else "o") if series_kind != "line" else None
+            linestyle = style.get("linestyle", "-") if key == "metric" else "-"
+            if series_kind == "scatter":
+                linestyle = "None"
+            fillstyle = style.get("fillstyle", "full") if key == "metric" else "full"
+            proxy = Line2D([], [], color=color, marker=marker, linestyle=linestyle, fillstyle=fillstyle,
+                           markerfacecolor="none" if fillstyle == "none" else color,
+                           markeredgecolor=color, markeredgewidth=0.85, markersize=5, linewidth=1.2)
+            proxy._scientific_identity = ("role", key, identity, series_kind)
+            proxy._scientific_linestyle = linestyle
+            proxies.append(proxy)
+            proxy_labels.append(f"{spec[key + '_label']}: {label}")
+    extras = [(handle, label) for handle, label in zip(handles, labels) if handle not in role_handles]
+    return proxies + [handle for handle, _ in extras], proxy_labels + [label for _, label in extras]
+
+
+def _registry_styles(style_registry: dict | None, palette: str = "classic", focus: str | None = None) -> dict:
     if style_registry is None:
         return {}
     if not isinstance(style_registry, dict):
         raise ValueError("style_registry must map string series labels to style objects.")
+    labels = list(style_registry)
+    palette_colors = _palette(len(labels), False, palette, labels.index(focus) if focus in labels else None)
     resolved = {}
     for index, (label, style) in enumerate(style_registry.items()):
         if not isinstance(label, str) or not isinstance(style, dict):
             raise ValueError("style_registry needs string labels and style objects.")
-        if style.keys() - {"color", "marker", "linestyle"}:
-            raise ValueError("style_registry accepts color, marker and linestyle only; kinds stay per figure.")
+        if style.keys() - {"color", "marker", "linestyle", "fillstyle"}:
+            raise ValueError("style_registry accepts color, marker, linestyle and fillstyle only; kinds stay per figure.")
         resolved[label] = {
-            "color": CATEGORICAL_COLORS[index % len(CATEGORICAL_COLORS)],
+            "color": palette_colors[index],
             "marker": MARKERS[index % len(MARKERS)],
             "linestyle": LINESTYLES[index % len(LINESTYLES)],
             **style,
@@ -759,11 +945,12 @@ def _registry_styles(style_registry: dict | None) -> dict:
 
 def _series_options(values: list, kind: str, series_styles: dict | None,
                     line_width: float | None, marker_size: float | None,
-                    style_registry: dict | None = None) -> dict:
+                    style_registry: dict | None = None, palette: str = "classic", focus: str | None = None,
+                    role_styles: dict | None = None) -> dict:
     if series_styles is not None and not isinstance(series_styles, dict):
         raise ValueError("series_styles must map string series labels to style objects.")
     styles = series_styles or {}
-    registry = _registry_styles(style_registry)
+    registry = _registry_styles(style_registry, "classic" if role_styles else palette, focus)
     labels = {label for label, _ in values}
     if len(labels) != len(values):
         raise ValueError("Series labels are ambiguous after string conversion; use unique string labels.")
@@ -777,17 +964,28 @@ def _series_options(values: list, kind: str, series_styles: dict | None,
     result = {}
     for label, _ in values:
         style = styles.get(label, {})
-        if not isinstance(style, dict) or style.keys() - {"kind", "linestyle", "marker", "color", "line_width", "marker_size"}:
+        if not isinstance(style, dict) or style.keys() - {"kind", "linestyle", "marker", "color", "line_width", "marker_size", "fillstyle"}:
             raise ValueError(f"Invalid style keys for series {label!r}.")
         series_kind = style.get("kind", kind)
         if series_kind not in SERIES_KINDS or (kind != "mixed" and series_kind != kind):
             raise ValueError("Per-series kind changes require kind='mixed'; native kinds keep their semantics.")
         registered = dict(registry.get(label, {}))
+        if role_styles:
+            registered = {key: value for key, value in registered.items() if key in (style_registry or {}).get(label, {})}
         if series_kind == "line":
             registered.pop("marker", None)
         if series_kind == "scatter":
             registered.pop("linestyle", None)
-        style = {**registered, **style}
+        semantic = dict((role_styles or {}).get(label, {}))
+        if series_kind == "line":
+            semantic.pop("marker", None)
+            if semantic.get("fillstyle", "full") == "full":
+                semantic.pop("fillstyle", None)
+        if series_kind == "scatter":
+            semantic.pop("linestyle", None)
+        style = {**semantic, **registered, **style}
+        if "fillstyle" in style and (style["fillstyle"] not in ("full", "none") or series_kind == "line"):
+            raise ValueError("fillstyle must be full or none on point-line/scatter series only.")
         if series_kind == "line" and "marker" in style:
             raise ValueError("line series cannot specify a marker; use point-line or mixed explicitly.")
         if series_kind != "scatter" and style.get("linestyle", "-") in (None, "", "None", "none", " "):
@@ -826,7 +1024,8 @@ def _draw_series(axes, x_values, y_values, label, style, index, color):
     marker = style.get("marker", MARKERS[index % len(MARKERS)])
     if series_kind == "scatter":
         artist = axes.scatter(x_values, y_values, label=label or None, s=24, marker=marker,
-                              color=color, edgecolor="#333333", linewidth=0.35, zorder=3)
+                              facecolor="none" if style.get("fillstyle") == "none" else color,
+                              edgecolor=color if style.get("fillstyle") == "none" else "#333333", linewidth=0.35, zorder=3)
     else:
         linestyle = (LINESTYLES[(index // len(MARKERS)) % len(LINESTYLES)]
                      if series_kind == "point-line" else LINESTYLES[index % len(LINESTYLES)])
@@ -834,16 +1033,21 @@ def _draw_series(axes, x_values, y_values, label, style, index, color):
         artist, = axes.plot(x_values, y_values, label=label or None, color=color,
                             linestyle=linestyle, linewidth=1.5,
                             marker=marker if series_kind == "point-line" else None,
+                            fillstyle=style.get("fillstyle", "full"),
                             markersize=6.2, markerfacecolor=color, markeredgecolor="white",
                             markeredgewidth=0.9)
         artist._scientific_linestyle = linestyle
     artist._scientific_style = style
+    if "fillstyle" in style:
+        style["color"] = color
     artist._scientific_identity = (
         series_kind,
         colors.to_hex(color),
         None if series_kind == "scatter" else str(linestyle),
         None if series_kind == "line" else str(marker),
     )
+    if style.get("fillstyle") == "none":
+        artist._scientific_identity += ("none",)
     return artist
 
 
@@ -1191,7 +1395,9 @@ def _artist_color(artist):
     if isinstance(artist, PathCollection):
         painted = artist.get_facecolor()
         if len(painted) == 0:
-            raise ValueError("Scatter series has no face color for error bars.")
+            painted = artist.get_edgecolor()
+        if len(painted) == 0:
+            raise ValueError("Scatter series has no face or edge color for error bars.")
         return painted[0]
     return artist.get_color()
 
@@ -1354,7 +1560,7 @@ def review_figure(figure: mpl.figure.Figure, *, journal: str | None = None) -> l
     if journal not in JOURNALS:
         raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
     preset = JOURNALS[journal]
-    findings = _canvas_text_findings(figure)
+    findings = _canvas_text_findings(figure) + _semantic_findings(figure)
     width = float(metadata.get("width_mm", figure.get_figwidth() * 25.4))
     height = float(metadata.get("height_mm", figure.get_figheight() * 25.4))
     if not _near(width, preset["widths_mm"]):
@@ -1487,10 +1693,73 @@ def _font_record(figure, requested: str) -> dict:
             "limitation": "Font files describe resolved text faces; per-glyph and math fallback require visual inspection."}
 
 
+def _semantic_findings(figure) -> list[dict]:
+    findings = []
+    candidates = [axes for axes in figure.axes if not hasattr(axes, "_scientific_primary_axes")
+                  and (getattr(axes, "_scientific_encoding", None) is not None
+                       or getattr(axes, "scientific_secondary_axes", None) is not None
+                       or any(getattr(artist, "_scientific_style", {}).get("fillstyle") == "none"
+                              for artist in (*axes.lines, *axes.collections)))]
+    if not candidates:
+        return findings
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    for axes in candidates:
+        spec = getattr(axes, "_scientific_encoding", None)
+        if spec is not None:
+            findings.append(_finding("info", "encoding", spec["reason"], measured={
+                "legend": spec["legend"], "observed": spec["observed"]}))
+            observed = {(record["category"], record["metric"]) for record in spec["observed"]}
+            metrics = {record["metric"] for record in spec["observed"]}
+            if len(metrics) > 1 and any("quantity" not in spec["metrics"][metric] for metric in metrics):
+                findings.append(_finding("warn", "metric_units",
+                                         "Some metric quantities/units are undeclared; compatibility was not inferred. Confirm units before sharing a y axis."))
+            missing = [(category, metric) for category in spec["categories"] for metric in spec["metrics"]
+                       if (category, metric) not in observed]
+            if missing:
+                findings.append(_finding("info", "missing_combinations",
+                                         "Role keys do not imply a complete factorial dataset; unobserved pairs were not fabricated.",
+                                         measured=missing))
+        for panel in _series_axes(axes):
+            for artist in (*panel.lines, *panel.collections):
+                style = getattr(artist, "_scientific_style", {})
+                if style.get("fillstyle") != "none":
+                    continue
+                diameter = (float(np.sqrt(artist.get_sizes()[0])) if isinstance(artist, PathCollection)
+                            else artist.get_markersize())
+                if diameter < 3.6:
+                    findings.append(_finding("warn", "hollow_marker",
+                                             f"Series {artist.get_label()!r}: hollow markers may be unreadable; use facets or explicit larger markers, not dropped rows.",
+                                             measured=diameter, expected=3.6))
+        right = getattr(axes, "scientific_secondary_axes", None)
+        if right is not None:
+            metadata = getattr(axes, "_scientific_panel", getattr(figure, "scientific_metadata", {}))
+            dual = metadata.get("secondary_y") or {}
+            findings.append(_finding("info", "dual_axis",
+                                     "Independent y axes: intersections, slopes and visual alignment do not establish equality or correlation. "
+                                     + dual.get("reason", ""), measured={"left_limits": list(axes.get_ylim()),
+                                                                        "right_limits": list(right.get_ylim())}))
+            for panel, expected in ((axes, dual.get("primary", {}).get("limits")), (right, dual.get("limits"))):
+                if expected is not None and not np.allclose(panel.get_ylim(), expected):
+                    findings.append(_finding("warn", "dual_limits", "Dual-axis limits changed after explicit validation; review the reason and coverage.",
+                                             measured=list(panel.get_ylim()), expected=expected))
+            if any(tick.gridline.get_visible() for axis in (right.xaxis, right.yaxis)
+                   for tick in (*axis.get_major_ticks(), *axis.get_minor_ticks())):
+                findings.append(_finding("warn", "dual_grid", "Secondary gridlines are visible; use one primary grid to avoid false correspondences."))
+            label_box = right.yaxis.label.get_window_extent(renderer)
+            for neighbor in figure.axes:
+                if neighbor not in _series_axes(axes) and not hasattr(neighbor, "_scientific_primary_axes"):
+                    if _extents_overlap(label_box, neighbor.get_window_extent(renderer), 2):
+                        findings.append(_finding("warn", "dual_label_overlap", "Secondary y label overlaps another panel; increase spacing or use facets."))
+    return findings
+
+
 def _grayscale_findings(figure) -> list[dict]:
     findings = []
     for panel_number, axes in enumerate(figure.axes, 1):
-        series = [artist for artist in (*axes.lines, *axes.collections)
+        if hasattr(axes, "_scientific_primary_axes"):
+            continue
+        series = [artist for panel in _series_axes(axes) for artist in (*panel.lines, *panel.collections)
                   if hasattr(artist, "_scientific_identity") and not getattr(artist, "_scientific_guide", False)]
         for index, first in enumerate(series):
             for second in series[index + 1:]:
@@ -1586,6 +1855,11 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
               "grayscale_heuristic": {"threshold": GRAYSCALE_DISTANCE,
                                       "formula": "abs(delta(0.2126 R + 0.7152 G + 0.0722 B)), encoded sRGB",
                                       "limitation": "Series-only screening, not a color-vision certification; no automatic styling changes."}}
+    decisions = [{"panel": index, **{key: panel.get(key) for key in ("palette", "focus", "encoding", "secondary_y")}}
+                 for index, panel in enumerate(metadata.get("panels", [metadata]), 1)
+                 if panel.get("encoding") is not None or panel.get("secondary_y") is not None or panel.get("palette", "classic") != "classic"]
+    if decisions:
+        report["visual_decisions"] = decisions
     target = paths[0].with_suffix("")
     report_paths = [target.with_name(target.name + "_review.json"), target.with_name(target.name + "_review.md")]
     _json_write(report_paths[0], report)
@@ -1601,6 +1875,15 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
                  for finding in findings)
     if not findings:
         lines.append("- No findings from implemented checks; manual inspection is still required.")
+    if decisions:
+        lines.extend(["", "## Visual decisions"])
+        for decision in decisions:
+            lines.append(f"- Panel {decision['panel']}: palette={decision['palette']}; focus={decision['focus']!r}")
+            if decision["encoding"] is not None:
+                lines.append(f"  - Encoding: {decision['encoding']['reason']}")
+            if decision["secondary_y"] is not None:
+                dual = decision["secondary_y"]
+                lines.append(f"  - Independent axes: {dual['reason']}")
     lines.extend(["", "## Manual checks", *[f"- {item}" for item in manual], "",
                   "Grayscale screening uses encoded-sRGB luminance distance < 0.08 plus marker/dash backup; "
                   "it is heuristic, not certification."])
@@ -1787,7 +2070,7 @@ def _recipe_inputs(options: dict, renderer: str) -> tuple[dict, dict]:
               "options": {key: value for key, value in options.items() if key not in excluded}}
     panel_keys = {"id", "kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
                   "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
-                  "reference_guides", "inset", "heatmap_scale", "quantity", "unit"}
+                  "reference_guides", "inset", "heatmap_scale", "quantity", "unit", "palette", "focus", "encoding", "secondary_y"}
 
     def panel_recipe(data, settings, identifier):
         settings = dict(settings)
@@ -2053,7 +2336,7 @@ def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size
     labels = []
     seen = {}
     for axes in axes_list:
-        for handle, label in zip(*axes.get_legend_handles_labels()):
+        for handle, label in zip(*_legend_entries(axes)):
             if not label or label.startswith("_"):
                 continue
             identity = getattr(handle, "_scientific_identity", None)
@@ -2064,9 +2347,10 @@ def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size
             seen[label] = identity
             handles.append(handle)
             labels.append(label)
-        existing = axes.get_legend()
-        if existing is not None:
-            existing.remove()
+        for panel in _series_axes(axes):
+            existing = panel.get_legend()
+            if existing is not None:
+                existing.remove()
     if not handles:
         return
     legend = figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.995),
@@ -2081,6 +2365,19 @@ def _place_shared_legend(figure: mpl.figure.Figure, axes_list: list, legend_size
         raise ValueError("Legend does not fit this preset; select a larger size or simplify labels.")
     figure.subplots_adjust(top=min(figure.subplotpars.top, max(top, 0.5)))
     figure.canvas.draw()
+    for _attempt in range(3):
+        box = legend.get_window_extent(figure.canvas.get_renderer())
+        collisions = [other for other in _layout_boxes(figure) if _extents_overlap(box, other, pad)]
+        if not collisions:
+            break
+        intrusion = max(other.y1 + pad - box.y0 for other in collisions)
+        adjusted_top = figure.subplotpars.top - intrusion / figure.bbox.height
+        if adjusted_top - figure.subplotpars.bottom < 0.35:
+            raise ValueError("Shared legend overlaps panel labels; select a taller preset or simplify labels.")
+        figure.subplots_adjust(top=adjusted_top)
+        figure.canvas.draw()
+    else:
+        raise ValueError("Shared legend overlaps panel labels; select a larger preset.")
     for source, target in zip(handles, legend.legend_handles):
         _copy_identity(source, target)
         if isinstance(source, PathCollection):
@@ -2111,6 +2408,10 @@ def render_plot(
     yscale: str = "linear",
     series_styles: dict | None = None,
     style_registry: dict | None = None,
+    palette: str = "classic",
+    focus: str | None = None,
+    encoding: dict | None = None,
+    secondary_y: dict | None = None,
     reference_guides: list[dict] | None = None,
     inset: dict | None = None,
     heatmap_scale: dict | None = None,
@@ -2131,6 +2432,15 @@ def render_plot(
     """Draw without changing input data; return figure, axes and exported paths."""
     if kind not in KINDS or group_kind not in ("auto", "ordered", "categorical"):
         raise ValueError("Unknown plot kind or group kind.")
+    _palette(0, False, palette)
+    if (palette == "focus") != (isinstance(focus, str) and bool(focus.strip())) or (palette != "focus" and focus is not None):
+        raise ValueError("palette='focus' requires an explicit nonempty focus label; other palettes refuse focus.")
+    if kind == "heatmap" and palette != "classic":
+        raise ValueError("Categorical palettes do not apply to heatmaps; retain cividis.")
+    if encoding is not None and (kind not in (*SERIES_KINDS, "mixed") or group_kind == "ordered"):
+        raise ValueError("encoding requires categorical line/point-line/scatter/mixed series.")
+    if secondary_y is not None and kind not in SERIES_KINDS:
+        raise ValueError("secondary_y supports native line, point-line and scatter only.")
     size = resolve_size(size, journal)
     if xscale not in ("linear", "log") or yscale not in ("linear", "log"):
         raise ValueError("xscale and yscale must be linear or log.")
@@ -2162,15 +2472,50 @@ def render_plot(
         _required(frame, x, y)
         for column, scale in ((x, xscale), (y, yscale)):
             numeric = _numeric(frame, column)
-            if scale == "log" and np.any(numeric <= 0):
+            if scale == "log" and (column == x or secondary_y is None) and np.any(numeric <= 0):
                 raise ValueError(f"Log axis column {column!r} contains non-positive values; no rows were removed.")
-        ordered = _ordered_groups(frame, group, group_kind)
+        ordered = False if encoding is not None else _ordered_groups(frame, group, group_kind)
         values = _groups(frame, group, ordered)
-        styles = _series_options(values, kind, series_styles, line_width, marker_size, style_registry)
+        role_styles, encoding_metadata = _encoding_styles(encoding, values, palette, focus)
+        if encoding_metadata is not None and secondary_y is None:
+            metric_names = {record["metric"] for record in encoding_metadata["observed"]}
+            units = {(style["quantity"], style["unit"]) for metric, style in encoding_metadata["metrics"].items()
+                     if metric in metric_names and "quantity" in style}
+            if len(units) > 1:
+                raise ValueError("Different typed metrics cannot share one y axis; use facets or explicit secondary_y.")
+        styles = _series_options(values, kind, series_styles, line_width, marker_size, style_registry, palette, focus,
+                                 role_styles)
         comparisons, error_metadata = _comparison_errors(values, x, y, error)
     elif style_registry is not None:
         raise ValueError("style_registry applies to line, point-line, scatter and mixed only.")
-    error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale, yscale=yscale)
+    if palette == "focus" and encoding is None:
+        identity_labels = set((style_registry or {}).keys())
+        if kind == "violin" or (kind == "bar" and group is None):
+            if x is None:
+                identity_labels.add("Data")
+            else:
+                identity_labels.update(str(item) for item in pd.unique(frame[x]))
+        else:
+            identity_labels.update(label for label, _ in _groups(frame, group, False))
+        if focus not in identity_labels:
+            raise ValueError("focus must name a plotted series/category or an entry in style_registry.")
+    secondary_spec = _resolve_secondary_y(secondary_y, values if kind in SERIES_KINDS else [], kind=kind,
+                                         ylabel=ylabel, yscale=yscale, error=error, inset=inset, guides=guides,
+                                         encoding=encoding_metadata if encoding is not None else None)
+    error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale,
+                                         yscale="linear" if secondary_spec is not None else yscale)
+    if secondary_spec is not None:
+        for label, subset in _groups(frame, group, ordered):
+            axis_spec = secondary_spec if label in secondary_spec["series"] else secondary_spec["primary"]
+            scale = secondary_spec["scale"] if label in secondary_spec["series"] else yscale
+            coordinates = _numeric(subset, y)
+            errors = _axis_errors(subset, "y", error_bar_state) if error_bar_state is not None else None
+            lower = coordinates if errors is None else coordinates - errors[0]
+            upper = coordinates if errors is None else coordinates + errors[1]
+            if scale == "log" and np.any(lower <= 0):
+                raise ValueError(f"Log axis series {label!r} has non-positive values or error-bar endpoints.")
+            if np.any(lower < axis_spec["limits"][0]) or np.any(upper > axis_spec["limits"][1]):
+                raise ValueError(f"Explicit dual-axis limits exclude data or error bars for {label!r}; expand them or use facets.")
     text_sizes = TEXT_SIZES_PT[size]
     with mpl.rc_context(_rc_for_font(face, text_sizes, embed=True)):
         width_mm, _preset_height = SIZES_MM[size]
@@ -2190,6 +2535,9 @@ def render_plot(
             error_axes = panels[1] if error is not None else None
             figure.scientific_error_axes = error_axes
         metadata = {
+            "palette": palette, "focus": focus,
+            "encoding": encoding_metadata if encoding is not None else None,
+            "secondary_y": secondary_spec,
             "xscale": xscale, "yscale": yscale,
             "size": size, "journal": journal,
             "width_mm": width_mm, "height_mm": resolved_height,
@@ -2215,42 +2563,65 @@ def render_plot(
         axes.set_xscale(xscale)
         axes.set_yscale(yscale)
         _style_axes(axes, kind)
+        axes._scientific_encoding = encoding_metadata if encoding is not None else None
+        right_axes = None
+        if secondary_spec is not None:
+            right_axes = axes.twinx()
+            axes.scientific_secondary_axes = right_axes
+            right_axes._scientific_primary_axes = axes
+            right_axes.set_yscale(secondary_spec["scale"])
+            _style_axes(right_axes, kind)
+            right_axes.grid(False, which="both", axis="both")
+            right_axes.tick_params(axis="y", which="both", left=False, right=True, labelleft=False, labelright=True)
+            axes.tick_params(axis="y", which="both", right=False)
+            for side in ("left", "top", "bottom"):
+                right_axes.spines[side].set_visible(False)
+            right_axes.set_ylabel(_prepare_label(secondary_spec["label"], families))
+            axes.set_ylim(secondary_spec["primary"]["limits"])
+            right_axes.set_ylim(secondary_spec["limits"])
         artists = {}
         error_artists = {}
         error_bar_records = []
 
-        def draw_uncertainty(x_values, y_values, yerr, xerr, color, label, zorder) -> None:
+        def draw_uncertainty(x_values, y_values, yerr, xerr, color, label, zorder, target_axes=None) -> None:
             if error_bar_state is None or (yerr is None and xerr is None):
                 return
-            _draw_errorbars(axes, x_values, y_values, yerr=yerr, xerr=xerr, color=color,
+            _draw_errorbars(axes if target_axes is None else target_axes, x_values, y_values, yerr=yerr, xerr=xerr, color=color,
                             capsize=error_bar_state["capsize_pt"], elinewidth=error_bar_state["elinewidth_pt"],
                             zorder=zorder)
-            error_bar_records.append(_errorbar_record(label, x_values, y_values, yerr, xerr))
+            record = _errorbar_record(label, x_values, y_values, yerr, xerr)
+            if secondary_spec is not None:
+                record["axis"] = "right" if target_axes is right_axes else "left"
+            error_bar_records.append(record)
 
         if kind in ("point-line", "line", "scatter", "bar", "mixed"):
             _required(frame, x, y)
             if kind in (*SERIES_KINDS, "mixed"):
-                ordered = _ordered_groups(frame, group, group_kind)
+                ordered = False if encoding is not None else _ordered_groups(frame, group, group_kind)
                 values = _groups(frame, group, ordered)
                 limit = len(MARKERS) * len(LINESTYLES) if kind in ("point-line", "mixed") else len(LINESTYLES)
                 if len(values) > limit:
                     raise ValueError("Too many series to distinguish in grayscale; divide them into panels.")
-                palette = _palette(len(values), ordered)
+                palette_colors = _palette(len(values), ordered, "classic" if encoding is not None else palette,
+                                          next((index for index, (label, _) in enumerate(values) if label == focus), None))
                 for index, (label, subset) in enumerate(values):
                     x_values, y_values = _numeric(subset, x), _numeric(subset, y)
-                    artists[label] = _draw_series(axes, x_values, y_values, label, styles[label], index, palette[index])
+                    target_axes = right_axes if secondary_spec is not None and label in secondary_spec["series"] else axes
+                    artists[label] = _draw_series(target_axes, x_values, y_values, label, styles[label], index, palette_colors[index])
+                    if encoding is not None:
+                        artists[label]._scientific_roles = encoding["series"][label]
                     if error_bar_state is not None:
                         artist = artists[label]
                         draw_uncertainty(x_values, y_values, _axis_errors(subset, "y", error_bar_state),
                                          _axis_errors(subset, "x", error_bar_state), _artist_color(artist), label,
-                                         2.5 if isinstance(artist, PathCollection) else 1.5)
+                                         2.5 if isinstance(artist, PathCollection) else 1.5, target_axes)
                 if error_axes is not None:
                     error_axes.set_xscale(xscale)
                     _style_axes(error_axes, kind)
                     for label, coordinates, differences in comparisons:
                         index = next(index for index, (name, _) in enumerate(values) if name == label)
                         error_artists[label] = _draw_series(error_axes, coordinates, differences, label,
-                                                           styles[label], index, palette[index])
+                                                           styles[label], index, palette_colors[index])
                     error_axes.set_ylabel(_prepare_label(error.get(
                         "ylabel", {"signed": "Signed error", "absolute": "Absolute error",
                                    "relative": "Relative error (-)"}[error_metadata["definition"]]), families))
@@ -2263,7 +2634,9 @@ def render_plot(
                 if group is None:
                     if frame[x].duplicated().any():
                         raise ValueError("Repeated bar category; aggregate explicitly or specify --group.")
-                    bars = axes.bar(frame[x].astype(str), frame[y], color=CATEGORICAL_COLORS[0],
+                    bar_colors = (_palette(len(frame), False, palette, list(frame[x].astype(str)).index(focus))
+                                  if palette == "focus" else _palette(1, False, palette)[0])
+                    bars = axes.bar(frame[x].astype(str), frame[y], color=bar_colors,
                                     edgecolor="#333333", linewidth=0.65)
                     if error_bar_state is not None:
                         centers = [patch.get_x() + patch.get_width() / 2 for patch in bars]
@@ -2273,14 +2646,15 @@ def render_plot(
                 else:
                     categories = list(pd.unique(frame[x]))
                     width = 0.8 / len(values)
-                    palette = _palette(len(values), ordered)
+                    palette_colors = _palette(len(values), ordered, palette,
+                                              next((index for index, (label, _) in enumerate(values) if label == focus), None))
                     for index, (label, subset) in enumerate(values):
                         if subset[x].duplicated().any():
                             raise ValueError("Repeated group/category; aggregate explicitly before plotting.")
                         positions = np.arange(len(categories)) - 0.4 + width * (index + 0.5)
                         indexed = subset.set_index(x)
                         heights = indexed[y].reindex(categories)
-                        bars = axes.bar(positions, heights, width=width, label=label, color=palette[index],
+                        bars = axes.bar(positions, heights, width=width, label=label, color=palette_colors[index],
                                         edgecolor="#333333", linewidth=0.65,
                                         hatch=("", "//", "..", "xx")[index % 4])
                         if error_bar_state is not None:
@@ -2322,8 +2696,10 @@ def render_plot(
                 categories = list(pd.unique(frame[x]))
                 samples = [frame.loc[frame[x] == category, y].to_numpy(dtype=float) for category in categories]
             parts = axes.violinplot(samples, showmeans=False, showmedians=False)
+            palette_colors = _palette(len(categories), False, palette,
+                                      next((index for index, category in enumerate(categories) if str(category) == focus), None))
             for index, body in enumerate(parts["bodies"]):
-                body.set_facecolor(CATEGORICAL_COLORS[index % len(CATEGORICAL_COLORS)])
+                body.set_facecolor(palette_colors[index])
                 body.set_edgecolor("#333333")
                 body.set_alpha(1)
             for key in ("cbars", "cmins", "cmaxes"):
@@ -2344,6 +2720,8 @@ def render_plot(
                                        bottom=max(0.13, margins.bottom), top=min(0.95, margins.top))
         figure.canvas.draw()
         _adapt_strokes(axes, kind, line_width, marker_size)
+        if right_axes is not None:
+            _adapt_strokes(right_axes, kind, line_width, marker_size)
         _refresh_inset(axes)
         if draw_legend:
             _place_legend(figure, axes, size, legend)
@@ -2352,6 +2730,8 @@ def render_plot(
             _adapt_log_ticks(panel_axes)
         figure.canvas.draw()
         _adapt_strokes(axes, kind, line_width, marker_size)
+        if right_axes is not None:
+            _adapt_strokes(right_axes, kind, line_width, marker_size)
         for label, artist in error_artists.items():
             _copy_identity(artists[label], artist)
         _sync_legend(axes)
@@ -2365,6 +2745,14 @@ def render_plot(
                         "marker_size_pt": float(np.sqrt(artist.get_sizes()[0])) if isinstance(artist, PathCollection)
                         else artist.get_markersize() if styles[label]["kind"] == "point-line" else None}
                 for label, artist in artists.items()}
+            if palette != "classic" or encoding is not None or secondary_spec is not None or any("fillstyle" in style for style in styles.values()):
+                for label, artist in artists.items():
+                    metadata["series"][label].update(color=colors.to_hex(_artist_color(artist)),
+                                                      identity=list(artist._scientific_identity),
+                                                      style=_config_value(styles[label]))
+                    if secondary_spec is not None:
+                        metadata["series"][label]["axis"] = "right" if artist.axes is right_axes else "left"
+        _refresh_panel_metadata(axes)
         for panel_axes in ((axes, error_axes) if hosted else figure.axes):
             if panel_axes is not None:
                 _hide_edge_grids(panel_axes)
@@ -2374,7 +2762,9 @@ def render_plot(
         if not hosted:
             figure.scientific_review = review_figure(figure, journal=journal)
             exported = _export_figure(figure, output, chosen_formats, dpi_by_format, metadata,
-                                      error is not None or error_bar_state is not None or bool(guides) or inset_spec is not None)
+                                      error is not None or error_bar_state is not None or bool(guides) or inset_spec is not None
+                                      or palette != "classic" or encoding is not None or secondary_spec is not None
+                                      or any("fillstyle" in getattr(artist, "_scientific_style", {}) for artist in artists.values()))
         return figure, axes, exported
 
 
@@ -2390,14 +2780,32 @@ def _copy_matching_artists(source_axes, target_axes) -> None:
             _copy_identity(source, artist)
 
 
+def _refresh_panel_metadata(axes) -> None:
+    metadata = getattr(axes, "_scientific_panel", getattr(axes.figure, "scientific_metadata", {}))
+    for panel in _series_axes(axes):
+        for artist in (*panel.lines, *panel.collections):
+            if not hasattr(artist, "_scientific_identity"):
+                continue
+            record = metadata.get("series", {}).get(artist.get_label())
+            if record is None:
+                continue
+            scatter = isinstance(artist, PathCollection)
+            record["line_width_pt"] = None if scatter else artist.get_linewidth()
+            record["marker_size_pt"] = (float(np.sqrt(artist.get_sizes()[0])) if scatter
+                                         else artist.get_markersize() if artist._scientific_identity[0] == "point-line" else None)
+    if metadata.get("encoding") is not None:
+        metadata["encoding"]["resolved_series"] = {
+            label: {key: record[key] for key in ("color", "identity", "axis", "line_width_pt", "marker_size_pt") if key in record}
+            for label, record in metadata.get("series", {}).items()}
+
+
 def _sync_figure_legend(figure: mpl.figure.Figure) -> None:
     if not figure.legends:
         return
     legend = figure.legends[0]
     sources = {}
     for axes in figure.axes:
-        for artist in (*axes.lines, *axes.collections):
-            label = artist.get_label()
+        for artist, label in zip(*_legend_entries(axes)):
             if label and not str(label).startswith("_") and label not in sources:
                 sources[label] = artist
     for target, text in zip(legend.legend_handles, legend.get_texts()):
@@ -2487,6 +2895,9 @@ def render_multipanel(
     dpi: int | None = None,
     font: str = "Arial",
     style_registry: dict | None = None,
+    palette: str = "classic",
+    focus: str | None = None,
+    encoding: dict | None = None,
     layout: list[list[str | None]] | None = None,
     shared_colorbar: dict | None = None,
     report: bool = False,
@@ -2496,8 +2907,12 @@ def render_multipanel(
     """Compose real panels on one journal-width canvas. Titles stay in the caption."""
     if not panels:
         raise ValueError("render_multipanel needs at least one panel.")
+    _palette(0, False, palette)
     if legend not in ("shared", "each", "none"):
         raise ValueError("Multipanel legend must be shared, each or none.")
+    has_secondary = any(isinstance(panel, dict) and panel.get("secondary_y") is not None for panel in panels)
+    if has_secondary and sharey:
+        raise ValueError("Dual-axis panels cannot use sharey; choose explicit matching primary/secondary limits.")
     if journal not in JOURNALS:
         raise ValueError(f"journal must be one of: {', '.join(JOURNALS)}.")
     if size is None:
@@ -2530,11 +2945,13 @@ def render_multipanel(
     letters = [f"({chr(ord('a') + index)})" for index in range(count)]
     draw_keys = ("kind", "x", "y", "group", "value", "group_kind", "xlabel", "ylabel", "line_width",
                  "marker_size", "xscale", "yscale", "series_styles", "error", "error_bars", "legend",
-                 "reference_guides", "inset", "heatmap_scale")
+                 "reference_guides", "inset", "heatmap_scale", "palette", "focus", "encoding", "secondary_y")
     with mpl.rc_context(_rc_for_font(face, text_sizes, embed=False)):
         figure = plt.figure(figsize=(width_mm / 25.4, resolved_height / 25.4), dpi=120)
         figure.scientific_error_axes = None
         figure.scientific_metadata = {
+            "palette": palette, "focus": focus,
+            "encoding": encoding,
             "multipanel": True, "size": size, "journal": journal,
             "width_mm": width_mm, "height_mm": resolved_height,
             "formats": list(chosen_formats), "dpi_by_format": dpi_by_format,
@@ -2544,15 +2961,16 @@ def render_multipanel(
             "layout": layout, "shared_colorbar": shared_colorbar,
         }
         if shared_scale is None:
-            grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.38)
+            grid = figure.add_gridspec(nrows, ncols, hspace=0.55, wspace=0.8 if has_secondary else 0.38)
         else:
             outer = figure.add_gridspec(1, 2, width_ratios=[1, 0.035], wspace=0.12)
             grid = outer[0].subgridspec(nrows, ncols, hspace=0.55, wspace=0.38)
             colorbar_axes = figure.add_subplot(outer[1])
-        figure.subplots_adjust(left=0.16, right=0.88 if shared_scale is not None else 0.97, bottom=0.16, top=0.90)
+        figure.subplots_adjust(left=0.16, right=0.86 if has_secondary else 0.88 if shared_scale is not None else 0.97, bottom=0.16, top=0.90)
         created = []
         share_x_anchor = None
         share_y_anchor = None
+        shared_quantities = set()
         for index, panel in enumerate(panels):
             row, row_end, column, column_end = spans[index]
             cell = grid[row:row_end, column:column_end]
@@ -2573,6 +2991,9 @@ def render_multipanel(
             if share_y_anchor is None:
                 share_y_anchor = axes
             kwargs = {key: panel[key] for key in draw_keys if key in panel}
+            kwargs.setdefault("palette", palette if panel["kind"] != "heatmap" else "classic")
+            kwargs.setdefault("focus", focus if kwargs["palette"] == "focus" else None)
+            kwargs.setdefault("encoding", encoding if panel["kind"] in (*SERIES_KINDS, "mixed") else None)
             if shared_scale is not None and panel["kind"] == "heatmap":
                 kwargs["heatmap_scale"] = shared_scale
             render_plot(panel["data"], journal=journal, size=size, font=font, host_axes=axes,
@@ -2580,6 +3001,14 @@ def render_multipanel(
                         style_registry=style_registry if panel["kind"] in (*SERIES_KINDS, "mixed") else None,
                         draw_colorbar=shared_scale is None,
                         draw_legend=legend == "each", **kwargs)
+            if sharey and axes._scientific_panel.get("encoding") is not None:
+                encoded = axes._scientific_panel["encoding"]
+                observed_metrics = {record["metric"] for record in encoded["observed"]}
+                shared_quantities.update((style["quantity"], style["unit"])
+                                         for metric, style in encoded["metrics"].items()
+                                         if metric in observed_metrics and "quantity" in style)
+                if len(shared_quantities) > 1:
+                    raise ValueError("sharey cannot link different declared quantities/units; keep metric facets on separate y axes.")
             if sharex and row_end != nrows:
                 axes.tick_params(labelbottom=False)
                 if error_axes is not None:
@@ -2608,9 +3037,12 @@ def render_multipanel(
         figure.canvas.draw()
         for axes, error_axes, panel in created:
             _adapt_strokes(axes, panel["kind"], panel.get("line_width"), panel.get("marker_size"))
+            if getattr(axes, "scientific_secondary_axes", None) is not None:
+                _adapt_strokes(axes.scientific_secondary_axes, panel["kind"], panel.get("line_width"), panel.get("marker_size"))
             if error_axes is not None:
                 _copy_matching_artists(axes, error_axes)
             _refresh_inset(axes)
+            _refresh_panel_metadata(axes)
         for panel_axes in figure.axes:
             _adapt_log_ticks(panel_axes)
             _hide_edge_grids(panel_axes)
@@ -2706,6 +3138,10 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--yscale", choices=("linear", "log"), default="linear")
     parser.add_argument("--series-config", type=Path, help="JSON mapping of string series labels to styles; mixed requires kind for each")
     parser.add_argument("--style-registry", type=Path, help="Reusable JSON series identities: color, marker, linestyle")
+    parser.add_argument("--palette", choices=tuple(PALETTES), default="classic", help="Explicit categorical palette; ordered groups retain classic")
+    parser.add_argument("--focus", help="Explicit series/category to emphasize with --palette focus")
+    parser.add_argument("--encoding-config", type=Path, help="Explicit JSON category/metric roles and factorized legend")
+    parser.add_argument("--secondary-y-config", type=Path, help="Explicit dual-axis roles, quantities, units, limits and scientific reason")
     parser.add_argument("--reference-config", type=Path, help="JSON list of explicit constant or power reference guides")
     parser.add_argument("--inset-config", type=Path, help="JSON xlim, ylim and bounds for an explicit zoom inset")
     parser.add_argument("--legend", choices=("auto", "outside"), default="auto")
@@ -2748,6 +3184,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         parser.error("--error-interpolation requires --error-reference and --error-definition")
     series_styles = json.loads(options.series_config.read_text(encoding="utf-8")) if options.series_config else None
     style_registry = json.loads(options.style_registry.read_text(encoding="utf-8")) if options.style_registry else None
+    encoding = json.loads(options.encoding_config.read_text(encoding="utf-8")) if options.encoding_config else None
+    secondary_y = json.loads(options.secondary_y_config.read_text(encoding="utf-8")) if options.secondary_y_config else None
     reference_guides = json.loads(options.reference_config.read_text(encoding="utf-8")) if options.reference_config else None
     inset = json.loads(options.inset_config.read_text(encoding="utf-8")) if options.inset_config else None
     source = options.input.resolve()
@@ -2765,7 +3203,7 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         output=options.output, formats=options.formats, dpi=options.dpi,
         line_width=options.line_width, marker_size=options.marker_size,
         xscale=options.xscale, yscale=options.yscale, series_styles=series_styles,
-        style_registry=style_registry,
+        style_registry=style_registry, palette=options.palette, focus=options.focus, encoding=encoding, secondary_y=secondary_y,
         reference_guides=reference_guides, inset=inset,
         error=error, error_bars=_cli_error_bars(options, parser), legend=options.legend,
         journal=options.journal, height_mm=options.height_mm,
@@ -2780,6 +3218,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
         target = paths[0].with_suffix("")
         for flag, payload, suffix in (("--series-config", series_styles, "series"),
                                       ("--style-registry", style_registry, "registry"),
+                                      ("--encoding-config", encoding, "encoding"),
+                                      ("--secondary-y-config", secondary_y, "secondary_y"),
                                       ("--reference-config", reference_guides, "references"),
                                       ("--inset-config", inset, "inset")):
             if getattr(options, flag[2:].replace("-", "_")) is not None:

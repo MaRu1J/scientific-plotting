@@ -4,7 +4,7 @@ Use these interfaces for quantitative data, not particle rendering, 3D fields, s
 
 ## Stable identities across a paper
 
-`style_registry` is a mapping from exact string series labels to `color`, `marker`, and `linestyle`. The CLI reads the same object with `--style-registry registry.json`. It never sets `kind` or stroke sizes.
+`style_registry` is a mapping from exact string series labels to `color`, `marker`, `linestyle`, and optional point-line/scatter `fillstyle`. The CLI reads the same object with `--style-registry registry.json`. It never sets `kind` or stroke sizes. See [semantic design](semantic-design.md) for opt-in named palettes, category × metric roles, factorized legends and controlled independent dual axes; these do not change the original defaults.
 
 ```python
 registry = {

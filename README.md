@@ -4,6 +4,25 @@
 
 新增面向求解器与算法开发的定量分析能力：论文级系列身份配置、显式常值／阶数参考线、局部放大、跨行跨列组合图，以及数值热图共享色标。只处理定量数据；ParaView 粒子／三维渲染、截图拼版不在本轮范围。
 
+## 配色与多变量表达：显式启用
+
+- `palette="classic" | "jewel" | "muted" | "focus"`：保留旧默认，增加宝石色、柔和色和明确重点对象的配色。`focus` 必须指定重点标签，不替用户选择“最优方法”。有序分组继续使用原有渐变，热图继续使用 `cividis`。
+- `encoding={"categories": ..., "metrics": ..., "series": ...}`：显式声明材料／方法与指标的角色；材料固定颜色和点型，指标可用实空心与线型，共享图例可分解为两组语义键。不是从列名或截图猜测变量含义。
+- `fillstyle="full" | "none"`：点线图／散点的显式样式字段，支持密度自适应、图例、误差棒和局部放大；默认仍为实心。空心点过小时给出审查提醒，不删点。
+- `secondary_y={...}`：仅在确有紧凑同步阅读需要且用户接受时启用双轴。要求两轴量名、单位、覆盖数据与误差棒的范围和理由；每系列明确归属，只画一套主网格。首版不与 `mixed`、局部放大、参考线或参考误差子图组合。
+- **选图默认仍是分面优先**：不同物理量优先共享 x、分行显示，工况作为面板；声明为不同量／单位的指标不能直接共用一个普通 y 轴。单位换算轴不是独立双指标接口，暂不实现。
+
+完整字段与示例见 [语义化绘图说明](scientific-plotting/references/semantic-design.md)。单图 CLI 增加 `--palette`、`--focus`、`--encoding-config`、`--secondary-y-config`；审查报告和便携包保留配置与决策，不改变默认数据打包授权。
+
+生成同数据配色对照、两指标×三工况分面、受控双轴、灰度及三类色觉模拟预览：
+
+```bash
+MPLBACKEND=Agg .venv/bin/python examples/plot_semantic_gallery.py --output figures/semantic_gallery
+MPLBACKEND=Agg .venv/bin/python -m pytest -q tests/test_semantic_plotting.py
+```
+
+输出目录须为新位置，避免覆盖已有复现包。所有曲线与 SD 都是**合成示例**，不代表附件实验或论文复现；独立图注说明保存在 `synthetic_caption_notes.txt`。色觉预览采用 Machado 等人的 2009 模型，只作辅助检查，不是可达性认证。现有字体、线宽、四边框、导出格式与原始数据行序规则不变。
+
 ## 算法比较：新增接口
 
 - `render_plot(..., style_registry=...)`：按系列标签固定颜色、点型、线型；优先级为当前 `series_styles` ＞注册配置＞原自动分配。注册配置允许多余系列，未注册系列会提醒。纯线不出现点，散点不连线。
