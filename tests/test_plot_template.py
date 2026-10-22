@@ -19,7 +19,7 @@ sys.path.insert(0, str(TEMPLATE.parent))
 
 from plot_template import (CATEGORICAL_COLORS, MARKERS, ORDERED_COLORS, SCATTER_DENSE_PT, SCATTER_SPARSE_PT,
                            TEXT_SIZES_PT, _line_vertices, _palette, connected_stroke, format_axis_label,
-                           render_plot, resolve_font)
+                           render_multipanel, render_plot, resolve_font)
 
 
 @pytest.fixture
@@ -380,8 +380,52 @@ def test_outside_legend_uses_top_band_without_narrowing_the_axes():
     legend_box = axes.get_legend().get_window_extent(figure.canvas.get_renderer())
     axes_box = axes.get_window_extent(figure.canvas.get_renderer())
     assert legend_box.y0 >= axes_box.y1 - 1
+    assert legend_box.x0 >= axes_box.x0 - 1
+    assert legend_box.x1 <= axes_box.x1 + 1
     assert axes.get_position().x1 > 0.85
     assert figure.subplotpars.right > 0.85
+    plt.close(figure)
+
+
+def test_outside_legend_stays_within_the_top_spine_and_close_to_it():
+    regions = ["Asia", "Africa", "Oceania", "North America", "Europe", "South America", "Sample median"]
+    rows = [{"x": 10 ** (2 + index / 3), "y": 40 + index, "region": region} for index, region in enumerate(regions)]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Arial not installed")
+        figure, axes, _ = render_plot(pd.DataFrame(rows), kind="scatter", x="x", y="y", group="region",
+                                      size="double", xscale="log", legend="outside",
+                                      xlabel="GDP per capita (2011 international-$)",
+                                      ylabel="Life expectancy (years)")
+    renderer = figure.canvas.get_renderer()
+    legend_box = axes.get_legend().get_window_extent(renderer)
+    axes_box = axes.get_window_extent(renderer)
+    gap = legend_box.y0 - axes_box.y1
+    assert legend_box.x0 >= axes_box.x0 - 1
+    assert legend_box.x1 <= axes_box.x1 + 1
+    assert 0 <= gap <= 6 * figure.dpi / 72
+    assert axes.get_position().x1 > 0.85
+    plt.close(figure)
+
+
+def test_shared_legend_stays_within_outer_spines():
+    frame = pd.DataFrame({"x": [0, 1, 0, 1], "y": [1, 2, 2, 3], "series": ["Alpha", "Alpha", "Beta", "Beta"]})
+    panel = {"data": frame, "kind": "line", "x": "x", "y": "y", "group": "series",
+             "xlabel": "Position (-)", "ylabel": "Signal (-)"}
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Arial not installed")
+        figure, axes, _ = render_multipanel([panel, panel], ncols=2, size="double", height_mm=140)
+    renderer = figure.canvas.get_renderer()
+    legend_box = figure.legends[0].get_window_extent(renderer)
+    boxes = [panel_axes.get_window_extent(renderer) for panel_axes in axes]
+    left, right = min(box.x0 for box in boxes), max(box.x1 for box in boxes)
+    top = max(box.y1 for box in boxes)
+    assert legend_box.x0 >= left - 1
+    assert legend_box.x1 <= right + 1
+    assert 0 <= legend_box.y0 - top <= 28 * figure.dpi / 72
+    for panel_axes in axes:
+        for text in panel_axes.texts:
+            if getattr(text, "_scientific_panel_letter", False):
+                assert not legend_box.overlaps(text.get_window_extent(renderer))
     plt.close(figure)
 
 

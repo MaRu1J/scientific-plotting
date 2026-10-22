@@ -30,4 +30,4 @@ Used for JCP, CMAME, IJHMT and ATE.
 
 ## Multi-panel figures
 
-`render_multipanel` places real axes on one of the widths above. Two to four panels on a width of at least 140 mm use two columns unless `ncols` is set. Each row targets a 4:3 panel plus a small label allowance. Total height stops at 210 mm, and the review says when that cap replaced 4:3. Panel letters are `(a)`, `(b)`, `(c)`. The default legend is one shared row above the figure. The same series name with a different color, line style, or marker is an error. No title is drawn inside the figure.
+`render_multipanel` places real axes on one of the widths above. Two to four panels on a width of at least 140 mm use two columns unless `ncols` is set. Each row targets a 4:3 panel plus a small label allowance. Total height stops at 210 mm, and the review says when that cap replaced 4:3. Panel letters are `(a)`, `(b)`, `(c)`. The default legend is one shared row just above the panels and no wider than the outer left and right spines. The same series name with a different color, line style, or marker is an error. No title is drawn inside the figure.
