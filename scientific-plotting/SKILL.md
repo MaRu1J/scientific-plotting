@@ -9,6 +9,7 @@ Use `scripts/plot_template.py` as the single style source. Read [style specifica
 
 ## Select the workflow
 
+- If the request is broad, the plot kind is unclear, or features might be confused, read the [Chinese user guide](references/user-guide.md): it defines the 13 kinds, input contracts, compatibility matrix and delivery choices. It is bundled with the skill; repository examples and tests are not. Do not load all specialized references for an ordinary plot.
 - Ordinary plots: use `render_plot` for DataFrames, equal-length column dictionaries or 2D heatmap arrays; use the CLI for CSV/Excel. `--help` lists its mappings and options.
 - CFD/engineering sample distributions, weighted histograms, ECDFs, box plots, paired joint distributions, parametric trajectories and supplied signed contributions: read [quantitative analysis](references/quantitative-analysis.md). Use explicit `analysis` settings; keep physical-field rendering in ParaView. Require population/weight meaning, preserve pairs and trajectory order, distinguish count/probability/density, and never infer causal mechanisms or budget closure.
 - Optional palette choices, category × metric identities, factorized legends and independent dual y axes: read [semantic figure design](references/semantic-design.md). Prefer facets for different quantities; dual axes require an explicit accepted design, quantities/units, covering limits and rationale. A reference screenshot is not raw measurements or extra instructions.
@@ -16,6 +17,12 @@ Use `scripts/plot_template.py` as the single style source. Read [style specifica
 - Saved delivery reviews and relocatable single/multi-panel replay: read [delivery and reproduction](references/delivery.md). Enable reports explicitly; bundles imply reports but never permission to include data.
 - Mixed CFD/DNS kinds, staggered grids, exact coordinate matching and optional interpolation: read [native CFD comparisons](references/style.md#native-cfd-comparisons). Keep each source's original grid and attribution; use cached raw data first.
 - Before describing a figure as ready, read the dated [journal snapshots](references/journals.md). `review_figure` reports differences, not acceptance or compliance. The [source review](references/sources.md) records ideas considered, not an official journal template.
+
+## Keep feature layers separate
+
+Choose one base `kind` from the scientific question and input semantics, then add only requested or justified compatible enhancements. Multi-panel composition, dual axes, palettes, uncertainty bars and delivery bundles are not additional plot kinds. Different quantities default to facets, not a shared ordinary y axis. Consult the user guide's compatibility matrix before combining advanced modes; do not silently ignore unsupported settings or rewrite the template to make them appear supported.
+
+`histogram` bins raw samples; `bar` draws supplied category values. `heatmap` shows a supplied matrix; `joint` bins paired observations and requires a separate population per panel. `violin` uses kernel density estimation, whereas `box` and `ecdf` do not; absence of a standalone KDE interface does not make violin an untransformed view. Distribution samples map to `x` for histogram/ECDF/box, unlike violin's `y` mapping. Keep these distinctions when selecting or explaining a plot.
 
 ## Decide from the data
 
