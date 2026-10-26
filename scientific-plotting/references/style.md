@@ -40,6 +40,16 @@ The user's reference image is a *style example*, not a source of experimental da
 - Optional [delivery review and bundles](delivery.md) apply to both plotting APIs. `report=True` rereads actual images and saves separate JSON/Markdown reviews. `bundle=DIR` implies review and supports relative-path offline replay; it excludes the legacy numeric metadata sidecar and omits all input snapshots unless `include_data=True`. Existing sidecars beside the original export remain unchanged and may contain numerical arrays; they are not automatically safe to share.
 
 
+## Optional uncertainty bands
+
+Use `error_bars={"y": "sd", "definition": "sample SD, n=24", "display": "band"}` on `line` or `point-line`. This changes the display of supplied magnitudes, not their meaning; the renderer calculates no interval. Asymmetric `y_lower`/`y_upper` are non-negative distances from y, **not absolute endpoints**; convert supplied bounds explicitly as `y-low` and `high-y`. Default alpha is 0.18; explicit alpha must be in (0, 0.35]. Fill has no outline and lies below central lines. The definition, display, opacity and source magnitudes are saved in metadata; delivery reports record the definition and display.
+
+Each series requires at least two strictly increasing or strictly decreasing x values. Unsorted/duplicate x is refused without sorting. Missing values are refused, not bridged. Bands accept y uncertainty only and cannot accompany insets or mixed/scatter/bar/analysis kinds; ordinary error bars retain their previous compatibility. Normal log-endpoint and independent-axis covering-limit checks still apply. Bands work in multipanels and replay bundles. No band is added automatically to deterministic curves.
+
+Distinguish sample SD (replicate spread), SEM (uncertainty of a mean), confidence intervals (state level and estimation method), prediction intervals and ensemble/quantile ranges. None is inferred from a translucent screenshot. Put the exact statistic, sample count when relevant, and synthetic/real provenance in the caption or caption-note file. Repeated x coordinates can indicate raw replicates: summarize only when scientifically justified and disclosed, otherwise retain raw points and use whiskers where appropriate.
+
+CLI: `--yerr sd --errorbar-definition 'sample SD, n=24' --uncertainty-display band --band-alpha 0.18`. `capsize`/`elinewidth` apply to bars only; `alpha` applies to bands only. No outer/inner nested-interval API is provided.
+
 ## Optional error bars
 
 - The agent, not the user, decides whether a figure needs error bars. Draw them when an uncertainty column belongs to the plotted value, or when replicate rows should be summarized as a mean. Do not draw them for a single series with no uncertainty information. A solver-error metric, residual or tolerance is not an uncertainty column just because it is named `error`. The user does not have to say "add error bars." Ask only when two different statistics would change the claim, or when the user already gave a conflicting instruction. State the statistic, n, and units in the caption note and in `definition`.

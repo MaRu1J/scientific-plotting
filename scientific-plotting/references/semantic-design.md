@@ -14,13 +14,15 @@ The same quantity expressed in convertible units needs a reversible conversion a
 
 ## Categorical palettes
 
-Both renderers accept `palette="classic" | "jewel" | "muted" | "focus"` and optional `focus`.
+Both renderers accept `palette="classic" | "jewel" | "muted" | "soft" | "coastal" | "focus"` and optional `focus`.
 
 | Palette | Intended use |
 | --- | --- |
 | `classic` | Existing categorical set; ordered groups retain amber → deep blue-teal |
 | `jewel` | More vivid separated hues, up to eight categorical colors |
 | `muted` | More subdued, sufficiently dark categorical hues, up to eight colors |
+| `soft` | Reference-inspired blue, rose, teal, purple, ochre and gray; six categorical colors, darkened for white-background strokes |
+| `coastal` | Blue, cyan-teal, green, purple and rose; five categorical colors, pair with pale uncertainty fill |
 | `focus` | One **explicitly named** identity in blue, background identities in gray; retain marker/dash differences |
 
 `focus` is required only for `palette="focus"`; other palettes reject it. It names a series label normally, a declared category with `encoding`, or an x category for an ungrouped bar/violin plot. A registry can retain an absent focus series across subset panels. No focus is inferred from a baseline, best value or input order.
@@ -36,6 +38,12 @@ figure, axes, paths = render_plot(
     palette="jewel", style_registry=registry, output="comparison",
 )
 ```
+
+### Reference-inspired color hierarchy
+
+The user-supplied reference images are visual inspiration, not verified official journal guidance. `soft` and `coastal` adapt their hue relationships; they are deliberately darker than the reference swatches for fine strokes. Keep white backgrounds, existing frame/grid/text defaults and stable cross-figure identities. Do not use similar pastel blues as six intersecting curve identities. Keep dash/shape redundancy; these palettes are not accessibility certification.
+
+For supplied uncertainty on continuous summaries, use the line color at low opacity (`display="band"`, default `alpha=0.18`) with no border; keep the central line fully opaque and above its fill. Do not assign extra category colors to uncertainty. Dense overlapping bands should prompt facets rather than progressively opaque fills. Use sequential color scales for ordered magnitudes and a justified zero-centered diverging scale for signed quantities; the present matrix renderer still supports only `cividis`, so do not fake a diverging mode through a categorical palette.
 
 ## Explicit category × metric roles
 

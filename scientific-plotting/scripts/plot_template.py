@@ -94,6 +94,9 @@ PALETTES = {
     "jewel": ("#315DB0", "#00836F", "#C45618", "#A33278", "#8C7218", "#6550AA", "#AD4245", "#424C59"),
     "muted": ("#52759B", "#A65F3B", "#4F7C66", "#8E6185", "#82752F", "#AC5552", "#706E9B", "#515B65"),
     "focus": ("#315DB0", "#717984"),
+    # Reference-inspired hues, darkened for fine strokes on white paper.
+    "soft": ("#4C6C9A", "#B95670", "#4B8C89", "#8870AE", "#A77C35", "#59616D"),
+    "coastal": ("#315F8C", "#238B9D", "#54836B", "#8B73AA", "#B86879"),
 }
 MARKERS = ("o", "s", "^", "D", "v", "p")
 SCATTER_DENSE_PT = 5.0
@@ -104,7 +107,7 @@ LINESTYLES = ("-", "--", "-.", ":", (0, (8, 2)), (0, (4, 1)),
 ERRORBAR_CAPSIZE_PT = 2.2
 ERRORBAR_ELINEWIDTH_PT = 0.8
 _ERRORBAR_KEYS = frozenset({"x", "y", "x_lower", "x_upper", "y_lower", "y_upper",
-                            "capsize", "elinewidth", "definition"})
+                            "capsize", "elinewidth", "definition", "display", "alpha"})
 DELIVERY_SCHEMA_VERSION = 1
 GRAYSCALE_DISTANCE = 0.08
 
@@ -1393,6 +1396,22 @@ def _resolve_error_bars(frame: pd.DataFrame, error_bars: dict | None, *, x: str 
         raise ValueError(f"Unknown error_bars keys: {sorted(unknown)}")
     if kind not in (*SERIES_KINDS, "mixed", "bar"):
         raise ValueError("Error bars apply to line, point-line, scatter, mixed and bar plots.")
+    display = error_bars.get("display", "bars")
+    if display not in ("bars", "band"):
+        raise ValueError("error_bars display must be 'bars' or 'band'.")
+    alpha = error_bars.get("alpha", 0.18)
+    if display == "band":
+        if kind not in ("line", "point-line"):
+            raise ValueError("Uncertainty bands require line or point-line plots.")
+        if any(error_bars.get(key) is not None for key in ("x", "x_lower", "x_upper")):
+            raise ValueError("Uncertainty bands accept y magnitudes only.")
+        if any(key in error_bars for key in ("capsize", "elinewidth")):
+            raise ValueError("Band display does not use capsize or elinewidth.")
+        if (isinstance(alpha, (bool, np.bool_)) or not isinstance(alpha, (int, float))
+                or not np.isfinite(alpha) or not 0 < alpha <= 0.35):
+            raise ValueError("Band alpha must be finite and in (0, 0.35].")
+    elif "alpha" in error_bars:
+        raise ValueError("error_bars alpha applies only to band display.")
     definition = error_bars.get("definition")
     if not isinstance(definition, str) or not definition.strip():
         raise ValueError("error_bars requires definition describing the magnitudes, such as sample standard deviation.")
@@ -1444,6 +1463,8 @@ def _resolve_error_bars(frame: pd.DataFrame, error_bars: dict | None, *, x: str 
                 or not np.isfinite(value) or not 0 < float(value) <= maximum):
             raise ValueError(f"error_bars {label} must be a positive finite value up to {maximum} pt.")
     return {
+        "display": display,
+        "alpha": float(alpha) if display == "band" else None,
         "definition": definition.strip(),
         "capsize_pt": float(capsize),
         "elinewidth_pt": float(elinewidth),
@@ -1948,6 +1969,12 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
                 for index, panel in enumerate(metadata.get("panels", [metadata]), 1) if panel.get("analysis") is not None]
     if analyses:
         report["quantitative_analysis"] = analyses
+    uncertainties = [{"panel": index, "definition": panel["error_bars"]["definition"],
+                      "display": panel["error_bars"]["display"], "alpha": panel["error_bars"]["alpha"]}
+                     for index, panel in enumerate(metadata.get("panels", [metadata]), 1)
+                     if panel.get("error_bars") is not None]
+    if uncertainties:
+        report["uncertainty"] = uncertainties
     target = paths[0].with_suffix("")
     report_paths = [target.with_name(target.name + "_review.json"), target.with_name(target.name + "_review.md")]
     _json_write(report_paths[0], report)
@@ -1976,6 +2003,10 @@ def _write_review(figure, paths: list[Path], requested_font: str, notices: list[
         lines.extend(["", "## Quantitative analysis"])
         for record in analyses:
             lines.append(f"- Panel {record['panel']}: " + json.dumps(record["analysis"], ensure_ascii=False))
+    if uncertainties:
+        lines.extend(["", "## Uncertainty"])
+        for record in uncertainties:
+            lines.append(f"- Panel {record['panel']}: {record['display']}; {record['definition']}; alpha={record['alpha']}")
     lines.extend(["", "## Manual checks", *[f"- {item}" for item in manual], "",
                   "Grayscale screening uses encoded-sRGB luminance distance < 0.08 plus marker/dash backup; "
                   "it is heuristic, not certification."])
@@ -2805,6 +2836,14 @@ def render_plot(
                                          encoding=encoding_metadata if encoding is not None else None)
     error_bar_state = _resolve_error_bars(frame, error_bars, x=x, y=y, kind=kind, xscale=xscale,
                                          yscale="linear" if secondary_spec is not None else yscale)
+    if error_bar_state is not None and error_bar_state["display"] == "band":
+        if inset is not None:
+            raise ValueError("Uncertainty bands with insets are not supported; use separate panels.")
+        for label, subset in _groups(frame, group, ordered):
+            coordinates = _numeric(subset, x)
+            differences = np.diff(coordinates)
+            if len(coordinates) < 2 or not (np.all(differences > 0) or np.all(differences < 0)):
+                raise ValueError(f"Band series {label!r} requires strictly monotonic x and at least two points; no sorting applied.")
     if secondary_spec is not None:
         for label, subset in _groups(frame, group, ordered):
             axis_spec = secondary_spec if label in secondary_spec["series"] else secondary_spec["primary"]
@@ -2850,6 +2889,8 @@ def render_plot(
             "inset": inset_spec,
             "heatmap_scale": heatmap_limits or None,
             "error_bars": None if error_bar_state is None else {
+                "display": error_bar_state["display"],
+                "alpha": error_bar_state["alpha"],
                 "definition": error_bar_state["definition"],
                 "capsize_pt": error_bar_state["capsize_pt"],
                 "elinewidth_pt": error_bar_state["elinewidth_pt"],
@@ -2888,9 +2929,18 @@ def render_plot(
         def draw_uncertainty(x_values, y_values, yerr, xerr, color, label, zorder, target_axes=None) -> None:
             if error_bar_state is None or (yerr is None and xerr is None):
                 return
-            _draw_errorbars(axes if target_axes is None else target_axes, x_values, y_values, yerr=yerr, xerr=xerr, color=color,
-                            capsize=error_bar_state["capsize_pt"], elinewidth=error_bar_state["elinewidth_pt"],
-                            zorder=zorder)
+            destination = axes if target_axes is None else target_axes
+            if error_bar_state["display"] == "band":
+                band = destination.fill_between(
+                    x_values, y_values - yerr[0], y_values + yerr[1],
+                    color=color, alpha=error_bar_state["alpha"], linewidth=0,
+                    zorder=1, label="_nolegend_",
+                )
+                band._scientific_uncertainty_band = True
+            else:
+                _draw_errorbars(destination, x_values, y_values, yerr=yerr, xerr=xerr, color=color,
+                                capsize=error_bar_state["capsize_pt"], elinewidth=error_bar_state["elinewidth_pt"],
+                                zorder=zorder)
             record = _errorbar_record(label, x_values, y_values, yerr, xerr)
             if secondary_spec is not None:
                 record["axis"] = "right" if target_axes is right_axes else "left"
@@ -3409,6 +3459,10 @@ def _cli_error_bars(options, parser) -> dict | None:
         payload["elinewidth"] = options.errorbar_elinewidth
     if options.errorbar_definition is not None:
         payload["definition"] = options.errorbar_definition
+    if options.uncertainty_display is not None:
+        payload["display"] = options.uncertainty_display
+    if options.band_alpha is not None:
+        payload["alpha"] = options.band_alpha
     if not payload:
         return None
     if not payload.keys() & {"x", "y", "x_lower", "x_upper", "y_lower", "y_upper"}:
@@ -3465,6 +3519,8 @@ def run_cli(argv: list[str] | None = None) -> list[Path]:
     parser.add_argument("--errorbar-capsize", type=float, help="Error-bar cap half-length in points")
     parser.add_argument("--errorbar-elinewidth", type=float, help="Error-bar stroke width in points")
     parser.add_argument("--errorbar-definition", help="Required with error bars: what the magnitudes mean")
+    parser.add_argument("--uncertainty-display", choices=("bars", "band"), help="Render supplied uncertainty as whiskers or a y band")
+    parser.add_argument("--band-alpha", type=float, help="Band opacity in (0, 0.35], default 0.18")
     parser.add_argument("--zero-reference", choices=("raise",), default="raise")
     parser.add_argument("--sheet", default="0", help="Excel sheet name or zero-based number")
     parser.add_argument("--index-col", help="Matrix heatmap row-label column")

@@ -8,7 +8,8 @@
 
 | 你现在要做什么 | 阅读入口 |
 | --- | --- |
-| 不知道该选哪种图，或想完整了解能力边界 | [中文使用手册](scientific-plotting/references/user-guide.md) |
+| 想根据科研问题选择图型 | [科研选图指南](scientific-plotting/references/user-guide.md#selection)：数据层次、13 种图型、误差棒／色带、工程案例 |
+| 想完整了解输入要求与能力边界 | [中文使用手册](scientific-plotting/references/user-guide.md) |
 | 已经有数据，想直接画第一张图 | 本页“快速开始” |
 | 想让 Agent 正确选择流程、按需加载说明 | [Skill 执行入口](scientific-plotting/SKILL.md) |
 | 需要具体高级字段、限制和代码 | 本页“专项参考” |
@@ -102,6 +103,18 @@ x 为 time（s），y 为 temperature（K），case 表示不同工况。
 ```
 
 可安装的 Skill 本体只有 `scientific-plotting/`；完整手册放在本体的 `references/` 中，随 Skill 一起携带。
+
+## 参考配色与不确定性带示例
+
+`palette="soft"` 提供柔和的冷暖分类色，`palette="coastal"` 提供蓝／青／绿主导的分类色；细线颜色经过加深，浅色用于不确定性填充。两者是可选扩展，不替换 `classic` 默认。
+
+连续曲线可传 `error_bars={"y": "sd", "definition": "sample SD, n=24", "display": "band"}`。这是已给定不确定度的显示方式，不会自动计算或推断置信区间。每组 x 必须严格单调；详细限制见[色带规范](scientific-plotting/references/style.md#optional-uncertainty-bands)。
+
+```bash
+MPLBACKEND=Agg .venv/bin/python examples/plot_soft_uncertainty.py --output figures/soft_uncertainty
+```
+
+示例以 24 条**合成**重复轨迹计算均值与样本 SD，生成原配色／误差棒与新配色／色带的同数据对比、另一套配色的单图、审查报告及复现包。统计含义保存在独立图注文件中，不能作为实验或 CFD 验证结果。
 
 ## 专项参考
 
